@@ -9,11 +9,10 @@ def verify_password(password, hashed):
     return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
 
 def criar_usuario_inicial():
-    """Cria um usuário admin se não existir nenhum."""
     db = SessionLocal()
     user = db.query(Usuario).first()
     if not user:
-        hashed = hash_password("admin123") # Senha padrão
+        hashed = hash_password("admin123") 
         novo_user = Usuario(username="admin", password_hash=hashed)
         db.add(novo_user)
         db.commit()

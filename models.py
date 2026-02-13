@@ -46,10 +46,10 @@ class Processo(Base):
     tribunal = Column(String)
     tipo_acao = Column(String)
     parte_contraria = Column(String)
-    status = Column(String) # Ex: Em andamento, Sentenciado
+    status = Column(String) 
     data_inicio = Column(Date)
     observacoes = Column(Text)
-    estrategia = Column(Text) # Campo privado
+    estrategia = Column(Text) 
     
     cliente = relationship("Cliente", back_populates="processos")
     audiencias = relationship("Audiencia", back_populates="processo", cascade="all, delete-orphan")
@@ -61,9 +61,9 @@ class Audiencia(Base):
     processo_id = Column(Integer, ForeignKey("processos.id"), nullable=False)
     titulo = Column(String, nullable=False)
     data_hora = Column(DateTime, nullable=False)
-    tipo = Column(String) # Audiencia, Prazo, Reunião
+    tipo = Column(String) 
     observacoes = Column(Text)
-    concluido = Column(Integer, default=0) # 0 = Não, 1 = Sim
+    concluido = Column(Integer, default=0) 
 
     processo = relationship("Processo", back_populates="audiencias")
 
@@ -76,7 +76,6 @@ class DiarioProcessual(Base):
 
     processo = relationship("Processo", back_populates="diario")
 
-# Criação das tabelas
 def init_db():
     Base.metadata.create_all(bind=engine)
 

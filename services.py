@@ -7,7 +7,6 @@ from datetime import datetime
 BASE_DIR = Path("dados")
 
 def sanitize_filename(name):
-    """Remove caracteres inválidos para nomes de arquivos/pastas."""
     return re.sub(r'[<>:"/\\|?*]', '', str(name)).strip().replace(' ', '_')
 
 def get_cliente_dir(cliente_nome, cliente_id):
@@ -26,7 +25,6 @@ def criar_estrutura_cliente(cliente_nome, cliente_id):
     path = get_cliente_dir(cliente_nome, cliente_id)
     path.mkdir(parents=True, exist_ok=True)
     
-    # Criar JSON de metadados (opcional, já que temos o DB, mas solicitado no prompt)
     import json
     meta_path = path / "dados_cliente.json"
     with open(meta_path, 'w', encoding='utf-8') as f:
@@ -52,6 +50,11 @@ def listar_arquivos(cliente_nome, cliente_id, numero_processo):
         return []
     return [f.name for f in target_dir.iterdir() if f.is_file()]
 
+def get_caminho_arquivo(cliente_nome, cliente_id, numero_processo, filename):
+    """Retorna o caminho completo (Path object) do arquivo."""
+    target_dir = get_processo_dir(cliente_nome, cliente_id, numero_processo)
+    return target_dir / filename
+
 def excluir_arquivo(cliente_nome, cliente_id, numero_processo, filename):
     target_dir = get_processo_dir(cliente_nome, cliente_id, numero_processo)
     file_path = target_dir / filename
@@ -61,20 +64,17 @@ def excluir_arquivo(cliente_nome, cliente_id, numero_processo, filename):
     return False
 
 def criar_backup():
-    """Cria um zip da pasta de dados e do banco de dados."""
     backup_dir = Path("backups")
     backup_dir.mkdir(exist_ok=True)
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     zip_name = backup_dir / f"backup_completo_{timestamp}"
     
-    # Copiar DB para pasta dados temporariamente para incluir no zip
     if os.path.exists("juris_gestao.db"):
         shutil.copy("juris_gestao.db", BASE_DIR / "database_backup.db")
         
     shutil.make_archive(str(zip_name), 'zip', BASE_DIR)
     
-    # Limpar cópia do DB
     if (BASE_DIR / "database_backup.db").exists():
         (BASE_DIR / "database_backup.db").unlink()
         
