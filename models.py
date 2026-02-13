@@ -1,5 +1,5 @@
 import sqlalchemy
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, ForeignKey, Date
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, ForeignKey, Date, Float
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from datetime import datetime
 
@@ -54,6 +54,7 @@ class Processo(Base):
     cliente = relationship("Cliente", back_populates="processos")
     audiencias = relationship("Audiencia", back_populates="processo", cascade="all, delete-orphan")
     diario = relationship("DiarioProcessual", back_populates="processo", cascade="all, delete-orphan")
+    financeiro = relationship("Financeiro", back_populates="processo", cascade="all, delete-orphan")
 
 class Audiencia(Base):
     __tablename__ = "audiencias"
@@ -75,6 +76,18 @@ class DiarioProcessual(Base):
     texto = Column(Text, nullable=False)
 
     processo = relationship("Processo", back_populates="diario")
+
+class Financeiro(Base):
+    __tablename__ = "financeiro"
+    id = Column(Integer, primary_key=True, index=True)
+    processo_id = Column(Integer, ForeignKey("processos.id"), nullable=False)
+    descricao = Column(String, nullable=False) # Ex: Honorários Iniciais, Custas
+    tipo = Column(String, nullable=False) # Receita (Honorário) ou Despesa
+    valor = Column(Float, nullable=False)
+    data_vencimento = Column(Date)
+    status = Column(String, default="Pendente") # Pendente, Pago
+
+    processo = relationship("Processo", back_populates="financeiro")
 
 def init_db():
     Base.metadata.create_all(bind=engine)

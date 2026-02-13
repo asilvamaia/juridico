@@ -2,13 +2,14 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, date, timedelta
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, desc
+from sqlalchemy import or_, desc, func
 import base64
 import mimetypes
+import io
 
 # Importações Locais
 import models
-from models import Cliente, Processo, Audiencia, DiarioProcessual, get_db, init_db, SessionLocal
+from models import Cliente, Processo, Audiencia, DiarioProcessual, Financeiro, get_db, init_db, SessionLocal
 import auth
 import services
 
@@ -32,25 +33,25 @@ def format_date_br(dt):
         return dt.strftime("%d/%m/%Y")
     return "-"
 
+def format_moeda(valor):
+    """Formata valor float para R$"""
+    return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
 def render_file_preview(filepath, filename):
     """Renderiza visualização ou botão de download baseado no tipo do arquivo."""
     try:
-        # Tenta adivinhar o tipo MIME
         mime_type, _ = mimetypes.guess_type(filepath)
         
-        # Leitura do arquivo em bytes
         with open(filepath, "rb") as f:
             file_data = f.read()
 
         st.markdown(f"**Visualizando:** `{filename}`")
         
-        # Container para visualização
         with st.container(border=True):
             if mime_type and mime_type.startswith("image"):
                 st.image(file_data, caption=filename, use_container_width=True)
             
             elif mime_type == "application/pdf":
-                # Incorporar PDF usando iframe e base64
                 base64_pdf = base64.b64encode(file_data).decode('utf-8')
                 pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf"></iframe>'
                 st.markdown(pdf_display, unsafe_allow_html=True)
@@ -58,7 +59,6 @@ def render_file_preview(filepath, filename):
             else:
                 st.info(f"O formato do arquivo ({mime_type}) não suporta pré-visualização direta.")
 
-        # Botão de Download (sempre disponível)
         st.download_button(
             label="⬇️ Baixar Arquivo Original",
             data=file_data,
@@ -72,6 +72,24 @@ def render_file_preview(filepath, filename):
 
 # --- Telas do Sistema ---
 
+def show_calculadora_prazos():
+    st.header("📆 Calculadora de Prazos Processuais")
+    st.caption("Calcula dias úteis considerando finais de semana e feriados nacionais (Brasil).")
+    
+    with st.container(border=True):
+        c1, c2 = st.columns(2)
+        dt_pub = c1.date_input("Data da Publicação/Intimação", value=date.today(), format="DD/MM/YYYY")
+        dias = c2.number_input("Prazo em Dias Úteis", min_value=1, value=15)
+        
+        if st.button("Calcular Vencimento"):
+            resultado = services.calcular_prazo_util(dt_pub, dias)
+            
+            st.markdown("---")
+            c_res1, c_res2 = st.columns(2)
+            c_res1.success(f"📅 Data Fatal: **{resultado.strftime('%d/%m/%Y')}**")
+            c_res1.caption(f"Dia da semana: {resultado.strftime('%A')}")
+            c_res2.info("⚠️ Nota: O sistema considera feriados nacionais. Verifique feriados locais/municipais manualmente.")
+
 def show_dashboard(db: Session):
     st.header("📊 Dashboard Geral")
     
@@ -80,27 +98,17 @@ def show_dashboard(db: Session):
     total_clientes = db.query(Cliente).count()
     total_processos = db.query(Processo).filter(Processo.status == "Em andamento").count()
     
-    hoje = datetime.now()
-    inicio_semana = hoje - timedelta(days=hoje.weekday())
-    fim_semana = inicio_semana + timedelta(days=6)
+    # Cálculos Financeiros
+    receitas = db.query(func.sum(Financeiro.valor)).filter(Financeiro.tipo == "Honorário", Financeiro.status == "Pago").scalar() or 0
+    a_receber = db.query(func.sum(Financeiro.valor)).filter(Financeiro.tipo == "Honorário", Financeiro.status == "Pendente").scalar() or 0
     
-    audiencias_semana = db.query(Audiencia).filter(
-        Audiencia.data_hora >= inicio_semana,
-        Audiencia.data_hora <= fim_semana,
-        Audiencia.concluido == 0
-    ).count()
+    col1.metric("Clientes Ativos", total_clientes)
+    col2.metric("Processos em Andamento", total_processos)
+    col3.metric("Honorários Recebidos", format_moeda(receitas))
+    col4.metric("A Receber", format_moeda(a_receber), delta_color="normal")
 
-    prazos_prox = db.query(Audiencia).filter(
-        Audiencia.tipo == "Prazo",
-        Audiencia.concluido == 0,
-        Audiencia.data_hora <= hoje + timedelta(days=3)
-    ).count()
-
-    col1.metric("Clientes Cadastrados", total_clientes)
-    col2.metric("Processos Ativos", total_processos)
-    col3.metric("Eventos na Semana", audiencias_semana)
-    col4.metric("Prazos Críticos (3 dias)", prazos_prox, delta_color="inverse")
-
+    st.markdown("---")
+    
     st.subheader("🔔 Próximos Compromissos")
     prox_eventos = db.query(Audiencia).filter(Audiencia.concluido == 0).order_by(Audiencia.data_hora).limit(5).all()
     
@@ -145,14 +153,33 @@ def show_clientes(db: Session):
                         st.write(f"**Observações:** {cli.observacoes}")
                         st.caption(f"Cadastrado em: {format_date_br(cli.data_cadastro)}")
                         
-                        if st.button("🗑️ Excluir Cliente", key=f"del_cli_{cli.id}"):
-                            # Re-query para garantir sessão
-                            cli_to_del = db.query(Cliente).get(cli.id)
-                            if cli_to_del:
-                                db.delete(cli_to_del)
-                                db.commit()
-                                st.success("Cliente excluído!")
-                                st.rerun()
+                        # --- Botão Gerador de Procuração ---
+                        st.markdown("---")
+                        col_doc, col_del = st.columns([0.8, 0.2])
+                        
+                        with col_doc:
+                            if st.button(f"📄 Gerar Procuração (Word)", key=f"btn_doc_{cli.id}"):
+                                docx_file = services.gerar_procuracao(cli)
+                                if docx_file:
+                                    st.download_button(
+                                        label="⬇️ Baixar Procuração Preenchida",
+                                        data=docx_file,
+                                        file_name=f"Procuracao_{cli.nome}.docx",
+                                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                        key=f"dl_doc_{cli.id}"
+                                    )
+                                else:
+                                    st.warning("⚠️ Arquivo 'template_procuracao.docx' não encontrado na pasta 'templates'. Crie um arquivo Word com as tags {{nome_cliente}}, {{cpf_cliente}} para usar esta função.")
+
+                        with col_del:
+                            if st.button("🗑️ Excluir", key=f"del_cli_{cli.id}"):
+                                # Re-query para garantir sessão
+                                cli_to_del = db.query(Cliente).get(cli.id)
+                                if cli_to_del:
+                                    db.delete(cli_to_del)
+                                    db.commit()
+                                    st.success("Cliente excluído!")
+                                    st.rerun()
                     else:
                         # Modo de Edição (Formulário)
                         with st.form(key=f"form_edit_cli_{cli.id}"):
@@ -255,15 +282,137 @@ def show_processos(db: Session):
         for p in procs:
             with st.expander(f"{p.numero_processo} - {p.cliente.nome} ({p.status})"):
                 
-                edit_proc_mode = st.toggle("✏️ Editar Processo", key=f"edit_proc_tg_{p.id}")
+                # Visualização rápida
+                c1, c2, c3 = st.columns(3)
+                c1.write(f"**Tribunal:** {p.tribunal}")
+                c1.write(f"**Ação:** {p.tipo_acao}")
+                c2.write(f"**Contra:** {p.parte_contraria}")
+                c2.write(f"**Data:** {format_date_br(p.data_inicio)}")
+                c3.info(f"Status: {p.status}")
                 
-                if edit_proc_mode:
-                    # Modo de Edição
+                st.markdown("---")
+                
+                # --- ABAS INTERNAS DO PROCESSO ---
+                t_sub1, t_sub2, t_sub3, t_sub4 = st.tabs(["📂 Arquivos", "📝 Diário", "💰 Financeiro", "⚙️ Editar Processo"])
+                
+                # 1. ABA FINANCEIRO
+                with t_sub3:
+                    st.subheader("Controle Financeiro do Processo")
+                    
+                    # Formulário de Adição
+                    with st.form(key=f"fin_form_{p.id}"):
+                        c_f1, c_f2, c_f3 = st.columns(3)
+                        desc_fin = c_f1.text_input("Descrição (Ex: Honorário Inicial)")
+                        valor_fin = c_f2.number_input("Valor (R$)", min_value=0.0, step=100.0)
+                        tipo_fin = c_f3.selectbox("Tipo", ["Honorário", "Despesa/Custa"])
+                        
+                        c_f4, c_f5 = st.columns(2)
+                        dt_venc = c_f4.date_input("Vencimento", value=date.today(), format="DD/MM/YYYY")
+                        status_fin = c_f5.selectbox("Status", ["Pendente", "Pago"])
+                        
+                        if st.form_submit_button("➕ Adicionar Lançamento"):
+                            novo_fin = Financeiro(processo_id=p.id, descricao=desc_fin, valor=valor_fin, tipo=tipo_fin, data_vencimento=dt_venc, status=status_fin)
+                            db.add(novo_fin)
+                            db.commit()
+                            st.rerun()
+                    
+                    # Tabela de Lançamentos
+                    fin_items = db.query(Financeiro).filter(Financeiro.processo_id == p.id).all()
+                    if fin_items:
+                        data_fin = []
+                        total_hon = 0
+                        total_desp = 0
+                        
+                        for f in fin_items:
+                            data_fin.append({
+                                "Vencimento": f.data_vencimento.strftime("%d/%m/%Y"),
+                                "Descrição": f.descricao,
+                                "Tipo": f.tipo,
+                                "Valor": format_moeda(f.valor),
+                                "Status": f.status,
+                                "ID": f.id
+                            })
+                            if f.tipo == "Honorário": total_hon += f.valor
+                            else: total_desp += f.valor
+                        
+                        st.dataframe(pd.DataFrame(data_fin).drop(columns=["ID"]), use_container_width=True)
+                        st.caption(f"Total Honorários: {format_moeda(total_hon)} | Total Despesas: {format_moeda(total_desp)}")
+                        
+                        # Alterar Status Rápido
+                        st.markdown("##### Atualizar Status")
+                        fin_opts = [f"{d['Descrição']} - {d['Valor']}" for d in data_fin]
+                        sel_fin = st.selectbox("Selecione o lançamento", fin_opts, key=f"sel_fin_{p.id}")
+                        if st.button("Alternar Pago/Pendente", key=f"btn_fin_up_{p.id}"):
+                            idx = fin_opts.index(sel_fin)
+                            fin_id = data_fin[idx]['ID']
+                            fin_obj = db.query(Financeiro).get(fin_id)
+                            fin_obj.status = "Pago" if fin_obj.status == "Pendente" else "Pendente"
+                            db.commit()
+                            st.rerun()
+                    else:
+                        st.info("Nenhum lançamento financeiro neste processo.")
+
+                # 2. ABA ARQUIVOS
+                with t_sub1:
+                    uploaded = st.file_uploader("Anexar documento", key=f"up_{p.id}", accept_multiple_files=True)
+                    if uploaded:
+                        for f in uploaded:
+                            services.salvar_arquivo(f, p.cliente.nome, p.cliente.id, p.numero_processo)
+                        st.success("Arquivos salvos!")
+                        st.rerun()
+                    
+                    st.markdown("##### Arquivos Anexados:")
+                    files = services.listar_arquivos(p.cliente.nome, p.cliente.id, p.numero_processo)
+                    
+                    if files:
+                        for f in files:
+                            with st.container(border=True):
+                                col_icon, col_name, col_act = st.columns([0.05, 0.7, 0.25])
+                                col_icon.text("📄")
+                                col_name.write(f"**{f}**")
+                                
+                                # Botões lado a lado
+                                bt_view, bt_del = col_act.columns(2)
+                                
+                                # Botão Visualizar
+                                if bt_view.button("👁️", key=f"view_{p.id}_{f}", help="Visualizar arquivo"):
+                                    st.session_state[f"preview_{p.id}"] = f
+                                
+                                # Botão Excluir
+                                if bt_del.button("❌", key=f"del_{p.id}_{f}", help="Excluir arquivo"):
+                                    services.excluir_arquivo(p.cliente.nome, p.cliente.id, p.numero_processo, f)
+                                    st.rerun()
+
+                            # Área de Visualização Condicional
+                            if f"preview_{p.id}" in st.session_state and st.session_state[f"preview_{p.id}"] == f:
+                                st.info(f"Visualizando: {f}")
+                                full_path = services.get_caminho_arquivo(p.cliente.nome, p.cliente.id, p.numero_processo, f)
+                                render_file_preview(full_path, f)
+                                if st.button("Fechar Visualização", key=f"close_view_{p.id}"):
+                                    del st.session_state[f"preview_{p.id}"]
+                                    st.rerun()
+                    else:
+                        st.caption("Nenhum arquivo anexado.")
+
+                # 3. ABA DIÁRIO
+                with t_sub2:
+                    novo_diario = st.text_input("Nova nota", key=f"note_{p.id}")
+                    if st.button("Adicionar Nota", key=f"btn_note_{p.id}"):
+                        nota = DiarioProcessual(processo_id=p.id, texto=novo_diario)
+                        db.add(nota)
+                        db.commit()
+                        st.rerun()
+                    
+                    notas = db.query(DiarioProcessual).filter(DiarioProcessual.processo_id == p.id).order_by(desc(DiarioProcessual.data_registro)).all()
+                    for n in notas:
+                        st.text(f"{n.data_registro.strftime('%d/%m/%Y %H:%M')} - {n.texto}")
+
+                # 4. ABA EDITAR (Modo Robusto)
+                with t_sub4:
                     with st.form(key=f"form_edit_proc_{p.id}"):
                         ed_num = st.text_input("Número", value=p.numero_processo)
                         ed_trib = st.text_input("Tribunal", value=p.tribunal)
                         
-                        # Indices para selectbox
                         lista_tipos = ["Cível", "Trabalhista", "Criminal", "Família", "Tributário", "Outros"]
                         idx_tipo = lista_tipos.index(p.tipo_acao) if p.tipo_acao in lista_tipos else 0
                         ed_tipo = st.selectbox("Tipo", lista_tipos, index=idx_tipo)
@@ -276,7 +425,7 @@ def show_processos(db: Session):
                         
                         ed_dt = st.date_input("Data Início", value=p.data_inicio, format="DD/MM/YYYY")
                         ed_obs = st.text_area("Observações", value=p.observacoes)
-                        ed_est = st.text_area("Estratégia", value=p.estrategia)
+                        ed_est = st.text_area("Estratégia (Privado)", value=p.estrategia)
                         
                         if st.form_submit_button("💾 Atualizar Processo"):
                             # CRÍTICO: Re-buscar objeto
@@ -296,78 +445,6 @@ def show_processos(db: Session):
                                     st.rerun()
                                 except Exception as e:
                                     st.error(f"Erro ao atualizar: {e}")
-
-                else:
-                    # Visualização
-                    c1, c2, c3 = st.columns(3)
-                    c1.write(f"**Tribunal:** {p.tribunal}")
-                    c1.write(f"**Ação:** {p.tipo_acao}")
-                    c2.write(f"**Contra:** {p.parte_contraria}")
-                    c2.write(f"**Data:** {format_date_br(p.data_inicio)}")
-                    c3.info(f"Status: {p.status}")
-                    
-                    st.markdown("---")
-                    st.write(f"**Obs:** {p.observacoes}")
-                    if st.checkbox("Ver Estratégia", key=f"view_est_{p.id}"):
-                        st.warning(f"🔒 **Estratégia:** {p.estrategia}")
-
-                    # --- Sub-abas (Arquivos e Diário) ---
-                    t_sub1, t_sub2 = st.tabs(["📂 Arquivos", "📝 Diário"])
-                    
-                    # Uploads e Visualização
-                    with t_sub1:
-                        uploaded = st.file_uploader("Anexar documento", key=f"up_{p.id}", accept_multiple_files=True)
-                        if uploaded:
-                            for f in uploaded:
-                                services.salvar_arquivo(f, p.cliente.nome, p.cliente.id, p.numero_processo)
-                            st.success("Arquivos salvos!")
-                            st.rerun()
-                        
-                        st.markdown("##### Arquivos Anexados:")
-                        files = services.listar_arquivos(p.cliente.nome, p.cliente.id, p.numero_processo)
-                        
-                        if files:
-                            for f in files:
-                                with st.container(border=True):
-                                    col_icon, col_name, col_act = st.columns([0.05, 0.7, 0.25])
-                                    col_icon.text("📄")
-                                    col_name.write(f"**{f}**")
-                                    
-                                    # Botões lado a lado
-                                    bt_view, bt_del = col_act.columns(2)
-                                    
-                                    # Botão Visualizar
-                                    if bt_view.button("👁️", key=f"view_{p.id}_{f}", help="Visualizar arquivo"):
-                                        st.session_state[f"preview_{p.id}"] = f
-                                    
-                                    # Botão Excluir
-                                    if bt_del.button("❌", key=f"del_{p.id}_{f}", help="Excluir arquivo"):
-                                        services.excluir_arquivo(p.cliente.nome, p.cliente.id, p.numero_processo, f)
-                                        st.rerun()
-
-                                # Área de Visualização Condicional
-                                if f"preview_{p.id}" in st.session_state and st.session_state[f"preview_{p.id}"] == f:
-                                    st.info(f"Visualizando: {f}")
-                                    full_path = services.get_caminho_arquivo(p.cliente.nome, p.cliente.id, p.numero_processo, f)
-                                    render_file_preview(full_path, f)
-                                    if st.button("Fechar Visualização", key=f"close_view_{p.id}"):
-                                        del st.session_state[f"preview_{p.id}"]
-                                        st.rerun()
-                        else:
-                            st.caption("Nenhum arquivo anexado.")
-
-                    # Diário
-                    with t_sub2:
-                        novo_diario = st.text_input("Nova nota", key=f"note_{p.id}")
-                        if st.button("Adicionar Nota", key=f"btn_note_{p.id}"):
-                            nota = DiarioProcessual(processo_id=p.id, texto=novo_diario)
-                            db.add(nota)
-                            db.commit()
-                            st.rerun()
-                        
-                        notas = db.query(DiarioProcessual).filter(DiarioProcessual.processo_id == p.id).order_by(desc(DiarioProcessual.data_registro)).all()
-                        for n in notas:
-                            st.text(f"{n.data_registro.strftime('%d/%m/%Y %H:%M')} - {n.texto}")
 
 def show_agenda(db: Session):
     st.header("📅 Agenda Jurídica")
@@ -459,17 +536,21 @@ def show_relatorios(db: Session):
 
     st.markdown("---")
     st.subheader("2. Backup do Sistema")
-    st.warning("Nota: Em ambientes de nuvem, o backup baixa apenas os dados da sessão atual se o disco não for persistente.")
+    st.warning("Nota: Em ambientes de nuvem (Streamlit Cloud), o backup baixa apenas os dados da sessão atual se o disco não for persistente.")
     if st.button("Gerar Backup Completo (.zip)"):
         with st.spinner("Compactando arquivos e banco de dados..."):
             zip_path = services.criar_backup()
             with open(zip_path, "rb") as f:
-                st.download_button("Baixar Backup", f, file_name=str(zip_path).split('/')[-1], mime="application/zip")
+                st.download_button(
+                    label="Baixar Backup ZIP",
+                    data=f,
+                    file_name=str(zip_path).split('/')[-1],
+                    mime="application/zip"
+                )
 
 # --- Main Flow ---
 
 def main():
-    # Login Check
     if not auth.login_page():
         return
 
@@ -477,7 +558,7 @@ def main():
     st.sidebar.title(f"Olá, {st.session_state.username}")
     menu = st.sidebar.radio(
         "Menu",
-        ["Dashboard", "Clientes", "Processos", "Agenda", "Relatórios"],
+        ["Dashboard", "Clientes", "Processos", "Agenda", "Calculadora Prazos", "Relatórios"],
         index=0
     )
     
@@ -485,7 +566,6 @@ def main():
     if st.sidebar.button("Sair"):
         auth.logout()
 
-    # Criação da Sessão de Banco de Dados
     db = SessionLocal()
     
     try:
@@ -497,12 +577,13 @@ def main():
             show_processos(db)
         elif menu == "Agenda":
             show_agenda(db)
+        elif menu == "Calculadora Prazos":
+            show_calculadora_prazos()
         elif menu == "Relatórios":
             show_relatorios(db)
     except Exception as e:
         st.error(f"Erro inesperado na aplicação: {e}")
     finally:
-        # Fechamento seguro da sessão
         db.close()
 
 if __name__ == "__main__":

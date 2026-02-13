@@ -2,9 +2,13 @@ import os
 import shutil
 import re
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
+import holidays
+from docxtpl import DocxTemplate
+import io
 
 BASE_DIR = Path("dados")
+TEMPLATES_DIR = Path("templates") # Pasta para modelos do Word
 
 def sanitize_filename(name):
     return re.sub(r'[<>:"/\\|?*]', '', str(name)).strip().replace(' ', '_')
@@ -24,6 +28,9 @@ def get_processo_dir(cliente_nome, cliente_id, numero_processo):
 def criar_estrutura_cliente(cliente_nome, cliente_id):
     path = get_cliente_dir(cliente_nome, cliente_id)
     path.mkdir(parents=True, exist_ok=True)
+    
+    # Cria pasta de templates se não existir
+    TEMPLATES_DIR.mkdir(exist_ok=True)
     
     import json
     meta_path = path / "dados_cliente.json"
@@ -51,7 +58,6 @@ def listar_arquivos(cliente_nome, cliente_id, numero_processo):
     return [f.name for f in target_dir.iterdir() if f.is_file()]
 
 def get_caminho_arquivo(cliente_nome, cliente_id, numero_processo, filename):
-    """Retorna o caminho completo (Path object) do arquivo."""
     target_dir = get_processo_dir(cliente_nome, cliente_id, numero_processo)
     return target_dir / filename
 
@@ -66,16 +72,57 @@ def excluir_arquivo(cliente_nome, cliente_id, numero_processo, filename):
 def criar_backup():
     backup_dir = Path("backups")
     backup_dir.mkdir(exist_ok=True)
-    
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     zip_name = backup_dir / f"backup_completo_{timestamp}"
-    
     if os.path.exists("juris_gestao.db"):
         shutil.copy("juris_gestao.db", BASE_DIR / "database_backup.db")
-        
     shutil.make_archive(str(zip_name), 'zip', BASE_DIR)
-    
     if (BASE_DIR / "database_backup.db").exists():
         (BASE_DIR / "database_backup.db").unlink()
-        
     return f"{zip_name}.zip"
+
+# --- Novas Funcionalidades ---
+
+def calcular_prazo_util(data_inicio, dias_uteis):
+    """Calcula data final considerando feriados BR e fins de semana."""
+    feriados_br = holidays.BR()
+    data_atual = data_inicio
+    dias_restantes = dias_uteis
+    
+    while dias_restantes > 0:
+        data_atual += timedelta(days=1)
+        # Se for fim de semana (5=Sab, 6=Dom) ou feriado, não conta
+        if data_atual.weekday() < 5 and data_atual not in feriados_br:
+            dias_restantes -= 1
+            
+    return data_atual
+
+def gerar_procuracao(dados_cliente):
+    """
+    Gera um documento Word preenchido.
+    Requer um arquivo 'template_procuracao.docx' na pasta 'templates'.
+    """
+    template_path = TEMPLATES_DIR / "template_procuracao.docx"
+    
+    # Cria um template de exemplo se não existir (para evitar erro no primeiro uso)
+    if not template_path.exists():
+        return None
+
+    doc = DocxTemplate(template_path)
+    
+    # Contexto: chaves que estão no Word {{chave}}
+    context = {
+        'nome_cliente': dados_cliente.nome,
+        'cpf_cliente': dados_cliente.cpf_cnpj,
+        'endereco_cliente': dados_cliente.endereco,
+        'email_cliente': dados_cliente.email,
+        'data_hoje': datetime.now().strftime("%d/%m/%Y")
+    }
+    
+    doc.render(context)
+    
+    # Salva em memória (BytesIO) para download
+    output = io.BytesIO()
+    doc.save(output)
+    output.seek(0)
+    return output

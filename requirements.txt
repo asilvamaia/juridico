@@ -3,3 +3,5 @@ sqlalchemy
 bcrypt
 pandas
 openpyxl
+docxtpl 
+holidays
