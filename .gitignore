@@ -1,0 +1,16 @@
+# Ignorar banco de dados (Isso é o mais importante)
+*.db
+*.sqlite3
+
+# Ignorar pastas de uploads e dados
+dados/
+backups/
+
+# Ignorar arquivos temporários do Python
+__pycache__/
+*.py[cod]
+
+# Ignorar ambiente virtual e configurações
+venv/
+.env
+.vscode/
