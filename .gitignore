@@ -1,16 +1,4 @@
-# Ignorar banco de dados (Isso é o mais importante)
 *.db
-*.sqlite3
-
-# Ignorar pastas de uploads e dados
+juris_gestao.db
 dados/
-backups/
-
-# Ignorar arquivos temporários do Python
 __pycache__/
-*.py[cod]
-
-# Ignorar ambiente virtual e configurações
-venv/
-.env
-.vscode/
