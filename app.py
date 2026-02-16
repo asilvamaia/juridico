@@ -558,7 +558,7 @@ def show_relatorios(db: Session):
                     mime="application/zip"
                 )
 
-# --- Função Principal ---
+# --- Função Principal (Main) ---
 
 def main():
     # 1. Autenticação (Login)
@@ -568,31 +568,42 @@ def main():
     # 2. Configurações Globais e Sidebar
     st.sidebar.title(f"Olá, {st.session_state.username}")
     
-    # --- LÓGICA DE API KEY (SECRETS) ---
-    # Verifica se a chave existe nos segredos (cloud ou local)
-    chave_encontrada_nos_secrets = False
+    # --- LÓGICA DE API KEY (SECRETS) - CORRIGIDA ---
+    
+    # Passo 1: Tenta ler dos Secrets (Nuvem ou Local)
+    api_key_nos_secrets = None
     try:
         if "GOOGLE_API_KEY" in st.secrets:
-            # Se achou no secrets, carrega automaticamente e MARCA como encontrada
-            st.session_state["google_key"] = st.secrets["GOOGLE_API_KEY"]
-            chave_encontrada_nos_secrets = True
+            api_key_nos_secrets = st.secrets["GOOGLE_API_KEY"]
+            # Salva na sessão se achou
+            st.session_state["google_key"] = api_key_nos_secrets
     except (FileNotFoundError, KeyError):
-        # Ignora erro se não tiver arquivo secrets.toml local
+        # Ignora se não achar o arquivo local
         pass
     
-    # Lógica de Exibição do Campo:
-    # SÓ mostra o campo SE:
-    # 1. A chave NÃO foi encontrada nos secrets
-    # 2. E AINDA NÃO foi digitada manualmente nesta sessão
-    if not chave_encontrada_nos_secrets:
-        # Verifica se já digitou manualmente antes
-        if "google_key" not in st.session_state:
-            st.sidebar.markdown("### 🤖 Configuração IA")
-            input_chave = st.sidebar.text_input("API Key (Google)", type="password", help="Chave necessária para usar o Gemma 3")
-            if input_chave:
-                st.session_state["google_key"] = input_chave
-                st.rerun() # Recarrega para limpar a interface
-    # -----------------------------------
+    # Passo 2: Decisão de mostrar ou não o campo de input
+    # Só mostramos se a chave NÃO foi encontrada nos secrets E nem digitada manualmente antes
+    
+    chave_esta_configurada = False
+    
+    # Verifica se já temos uma chave válida na sessão (vinda dos secrets ou input anterior)
+    if "google_key" in st.session_state and st.session_state["google_key"]:
+        chave_esta_configurada = True
+    
+    # Se a chave NÃO está configurada, mostra o campo para o usuário digitar
+    if not chave_esta_configurada:
+        st.sidebar.markdown("### 🤖 Configuração IA")
+        input_chave_manual = st.sidebar.text_input(
+            "API Key (Google)", 
+            type="password", 
+            help="Chave necessária para usar o Gemma 3. Configure nos Secrets para sumir daqui."
+        )
+        
+        if input_chave_manual:
+            st.session_state["google_key"] = input_chave_manual
+            st.rerun() # Recarrega para limpar a tela e aplicar a chave
+            
+    # -----------------------------------------------
 
     # Menu de Navegação
     menu_selecionado = st.sidebar.radio(
