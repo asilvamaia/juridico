@@ -9,7 +9,8 @@ DATABASE_URL = "sqlite:///juris_gestao.db"
 # Cria a base declarativa do SQLAlchemy
 Base = declarative_base()
 
-# Cria o motor de conexão (check_same_thread=False é necessário para SQLite com Streamlit)
+# Cria o motor de conexão
+# check_same_thread=False é necessário para SQLite funcionar bem com Streamlit
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 
 # Cria a fábrica de sessões
@@ -66,12 +67,16 @@ class Processo(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=False)
+    
+    # Dados Principais
     numero_processo = Column(String, unique=True, nullable=False)
     tribunal = Column(String)
     tipo_acao = Column(String)
     parte_contraria = Column(String)
     status = Column(String) # Ex: Em andamento, Suspenso, Arquivado
     data_inicio = Column(Date)
+    
+    # Dados Estratégicos
     observacoes = Column(Text)
     estrategia = Column(Text) 
     

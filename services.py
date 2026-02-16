@@ -140,6 +140,7 @@ def gerar_procuracao(dados_cliente, dados_advogado):
     doc = DocxTemplate(template_path)
     
     # Dicionário de Contexto (Merge Fields)
+    # Aqui unimos os dados do cliente e do advogado
     context = {
         # Dados do Cliente
         'nome_cliente': dados_cliente.nome,

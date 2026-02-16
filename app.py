@@ -6,7 +6,7 @@ from sqlalchemy import or_, desc, func
 import base64
 import mimetypes
 import io
-import time  # Importante para as mensagens de sucesso antes do reload
+import time  # Biblioteca time para controle de exibição de mensagens
 
 # Importações Locais
 import models
@@ -308,10 +308,22 @@ def show_processos(db: Session):
     with tab2:
         with st.form("form_novo_processo"):
             cliente_selecionado = st.selectbox("Selecione o Cliente", list(mapa_clientes.keys()))
-            numero_processo = st.text_input("Número do Processo (CNJ)")
-            tribunal = st.text_input("Vara / Tribunal")
-            status = st.selectbox("Status", ["Em andamento", "Suspenso", "Sentenciado", "Arquivado"])
+            
+            # Linha 1
+            col_proc1, col_proc2 = st.columns(2)
+            numero_processo = col_proc1.text_input("Número do Processo (CNJ)")
+            tribunal = col_proc2.text_input("Vara / Tribunal")
+            
+            # Linha 2
+            col_proc3, col_proc4 = st.columns(2)
+            tipo_acao = col_proc3.selectbox("Tipo de Ação", ["Cível", "Trabalhista", "Criminal", "Família", "Tributário", "Previdenciário", "Outros"])
+            status = col_proc4.selectbox("Status", ["Em andamento", "Suspenso", "Sentenciado", "Arquivado"])
+            
+            parte_contraria = st.text_input("Parte Contrária")
             data_inicio = st.date_input("Data de Início", value=date.today(), format="DD/MM/YYYY")
+            
+            observacoes = st.text_area("Observações Iniciais")
+            estrategia = st.text_area("🧠 Estratégia do Caso (Privado)", help="Campo confidencial para anotações estratégicas.")
             
             submitted = st.form_submit_button("Salvar Processo")
             
@@ -322,8 +334,12 @@ def show_processos(db: Session):
                         cliente_id=id_cliente, 
                         numero_processo=numero_processo, 
                         tribunal=tribunal,
+                        tipo_acao=tipo_acao,
+                        parte_contraria=parte_contraria,
                         status=status, 
-                        data_inicio=data_inicio
+                        data_inicio=data_inicio,
+                        observacoes=observacoes,
+                        estrategia=estrategia
                     )
                     db.add(novo_processo)
                     db.commit()
@@ -345,9 +361,19 @@ def show_processos(db: Session):
             for processo in processos:
                 with st.expander(f"{processo.numero_processo} - {processo.cliente.nome} ({processo.status})"):
                     
+                    # Visualização rápida dos dados
+                    col_info1, col_info2, col_info3 = st.columns(3)
+                    col_info1.write(f"**Ação:** {processo.tipo_acao}")
+                    col_info1.write(f"**Tribunal:** {processo.tribunal}")
+                    col_info2.write(f"**Contra:** {processo.parte_contraria}")
+                    col_info2.write(f"**Início:** {format_date_br(processo.data_inicio)}")
+                    col_info3.info(f"Status: {processo.status}")
+                    
+                    st.markdown("---")
+                    
                     # Abas internas do Processo
                     tab_arquivos, tab_financeiro, tab_diario, tab_editar = st.tabs(
-                        ["📂 Arquivos (IA)", "💰 Financeiro", "📝 Diário", "⚙️ Editar"]
+                        ["📂 Arquivos (IA)", "💰 Financeiro", "📝 Diário", "⚙️ Editar/Detalhes"]
                     )
                     
                     # --- ABA 1: ARQUIVOS & IA ---
@@ -469,13 +495,29 @@ def show_processos(db: Session):
                     with tab_editar:
                         st.subheader("Editar Dados do Processo")
                         with st.form(key=f"form_editar_proc_{processo.id}"):
-                            novo_status = st.selectbox("Atualizar Status", ["Em andamento", "Suspenso", "Sentenciado", "Arquivado"], key=f"sel_status_{processo.id}")
+                            
+                            ed_tribunal = st.text_input("Tribunal", value=processo.tribunal)
+                            ed_parte = st.text_input("Parte Contrária", value=processo.parte_contraria)
+                            
+                            # Logica para achar o index correto do selectbox
+                            lista_status_edit = ["Em andamento", "Suspenso", "Sentenciado", "Arquivado"]
+                            idx_status = lista_status_edit.index(processo.status) if processo.status in lista_status_edit else 0
+                            novo_status = st.selectbox("Status", lista_status_edit, index=idx_status)
+                            
+                            st.markdown("---")
+                            st.markdown("**Informações Adicionais**")
+                            ed_obs = st.text_area("Observações", value=processo.observacoes)
+                            ed_estrategia = st.text_area("Estratégia", value=processo.estrategia)
                             
                             if st.form_submit_button("Atualizar Processo"):
+                                processo.tribunal = ed_tribunal
+                                processo.parte_contraria = ed_parte
                                 processo.status = novo_status
+                                processo.observacoes = ed_obs
+                                processo.estrategia = ed_estrategia
                                 db.commit()
-                                st.success("Status atualizado!")
-                                time.sleep(1)
+                                st.success("Processo atualizado com sucesso!")
+                                time.sleep(1.5)
                                 st.rerun()
         else:
             st.info("Nenhum processo cadastrado.")
@@ -558,7 +600,7 @@ def show_relatorios(db: Session):
                     mime="application/zip"
                 )
 
-# --- Função Principal (Main) ---
+# --- Função Principal ---
 
 def main():
     # 1. Autenticação (Login)
