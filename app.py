@@ -318,6 +318,7 @@ def show_processos(db: Session):
                                             if "Erro" in texto_pdf:
                                                 st.error(texto_pdf)
                                             else:
+                                                # Usa a chave carregada na sessão (seja do secrets ou manual)
                                                 api_key = st.session_state.get("google_key")
                                                 resumo = services.resumir_com_google(texto_pdf, api_key)
                                                 st.session_state[f"resumo_{p.id}_{f}"] = resumo
@@ -541,24 +542,41 @@ def show_relatorios(db: Session):
 # --- Main Flow ---
 
 def main():
+    # 1. Verifica Login
     if not auth.login_page():
         return
 
-    # Sidebar Navigation
+    # 2. Configura Menu Lateral
     st.sidebar.title(f"Olá, {st.session_state.username}")
     
-    # --- INTEGRAÇÃO SECRETS PARA API ---
-    # Busca a chave nos segredos. Se não existir, pede manualmente.
-    if "GOOGLE_API_KEY" in st.secrets:
-        st.session_state["google_key"] = st.secrets["GOOGLE_API_KEY"]
-        # st.sidebar.success("✅ AI Ativada") # Opcional: mostrar confirmação visual
-    else:
-        st.sidebar.markdown("### 🤖 Configuração IA")
-        key = st.sidebar.text_input("API Key (Gemma 3)", type="password", help="Chave do Google AI Studio")
-        if key:
-            st.session_state["google_key"] = key
-    # -----------------------------------
+    # --- LÓGICA ROBUSTA DE API KEY (LOCAL E NUVEM) ---
+    api_key = None
+    
+    try:
+        # Tenta buscar nos Segredos (Funciona na Nuvem e Local se tiver arquivo)
+        if "GOOGLE_API_KEY" in st.secrets:
+            api_key = st.secrets["GOOGLE_API_KEY"]
+            # st.sidebar.success("✅ IA Conectada (Secrets)") # Opcional: Feedback visual
+            
+    except (FileNotFoundError, KeyError):
+        # Se estiver rodando local sem o arquivo .toml, cai aqui silenciosamente
+        pass
+    except Exception:
+        # Qualquer outro erro de leitura, ignora
+        pass
 
+    # Se conseguiu a chave (da nuvem ou arquivo), salva na sessão
+    if api_key:
+        st.session_state["google_key"] = api_key
+    else:
+        # Se NÃO achou (ex: rodando local sem config), pede na tela
+        st.sidebar.markdown("### 🤖 Configuração IA")
+        key_input = st.sidebar.text_input("API Key (Google)", type="password", help="Cole sua chave aqui ou configure os Secrets.")
+        if key_input:
+            st.session_state["google_key"] = key_input
+    # -------------------------------------------------
+
+    # 3. Renderiza o Menu
     menu = st.sidebar.radio(
         "Menu",
         ["Dashboard", "Clientes", "Processos", "Agenda", "Calculadora Prazos", "Relatórios"],
@@ -569,8 +587,8 @@ def main():
     if st.sidebar.button("Sair"):
         auth.logout()
 
+    # 4. Inicia Banco de Dados e Renderiza Telas
     db = SessionLocal()
-    
     try:
         if menu == "Dashboard":
             show_dashboard(db)

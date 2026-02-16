@@ -6,4 +6,4 @@ openpyxl
 docxtpl 
 holidays
 pypdf 
-google-generativeai
+google-genai
