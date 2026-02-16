@@ -6,13 +6,14 @@ from datetime import datetime
 # --- Configuração do Banco de Dados SQLite ---
 DATABASE_URL = "sqlite:///juris_gestao.db"
 
-# Base declarativa do SQLAlchemy
+# Cria a base declarativa do SQLAlchemy
 Base = declarative_base()
 
-# Motor de conexão (check_same_thread=False é vital para SQLite no Streamlit)
+# Cria o motor de conexão
+# check_same_thread=False é necessário para que o SQLite funcione corretamente com o Streamlit
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 
-# Fábrica de sessões
+# Cria a fábrica de sessões
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def get_db():
@@ -70,12 +71,12 @@ class Processo(Base):
     id = Column(Integer, primary_key=True, index=True)
     cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=False)
     
-    # Dados Principais
+    # Dados Principais do Processo
     numero_processo = Column(String, unique=True, nullable=False)
     tribunal = Column(String)
-    tipo_acao = Column(String)      # Ex: Cível, Trabalhista
+    tipo_acao = Column(String)      # Ex: Cível, Trabalhista, Criminal
     parte_contraria = Column(String)
-    status = Column(String)         # Ex: Em andamento, Suspenso
+    status = Column(String)         # Ex: Em andamento, Suspenso, Arquivado
     data_inicio = Column(Date)
     
     # Dados Estratégicos e Privados
