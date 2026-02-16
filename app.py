@@ -6,7 +6,7 @@ from sqlalchemy import or_, desc, func
 import base64
 import mimetypes
 import io
-import time
+import time  # Para mensagens de sucesso
 
 # Importações Locais
 import models
@@ -382,9 +382,9 @@ def show_processos(db: Session):
                     
                     st.markdown("---")
                     
-                    # Abas internas do Processo
-                    tab_arquivos, tab_financeiro, tab_diario, tab_editar = st.tabs(
-                        ["📂 Arquivos (IA)", "💰 Financeiro", "📝 Diário", "⚙️ Editar/Detalhes"]
+                    # Abas internas do Processo (COM A NOVA ABA AGENDA ADICIONADA)
+                    tab_arquivos, tab_agenda, tab_financeiro, tab_diario, tab_editar = st.tabs(
+                        ["📂 Arquivos (IA)", "📅 Agenda/Prazos", "💰 Financeiro", "📝 Diário", "⚙️ Editar/Detalhes"]
                     )
                     
                     # --- ABA 1: ARQUIVOS & IA ---
@@ -436,7 +436,34 @@ def show_processos(db: Session):
                         else:
                             st.caption("Nenhum arquivo anexado a este processo.")
 
-                    # --- ABA 2: FINANCEIRO ---
+                    # --- ABA 2: AGENDA (NOVA) ---
+                    with tab_agenda:
+                        st.subheader(f"Prazos e Audiências: {processo.numero_processo}")
+                        
+                        # Filtra eventos apenas deste processo
+                        eventos_processo = db.query(Audiencia).filter(Audiencia.processo_id == processo.id).order_by(Audiencia.data_hora).all()
+                        
+                        if eventos_processo:
+                            for evt in eventos_processo:
+                                with st.container(border=True):
+                                    col_evt1, col_evt2, col_evt3 = st.columns([0.2, 0.6, 0.2])
+                                    
+                                    col_evt1.write(f"📅 **{evt.data_hora.strftime('%d/%m/%Y')}**")
+                                    col_evt1.caption(f"{evt.data_hora.strftime('%H:%M')}")
+                                    
+                                    col_evt2.write(f"**{evt.titulo}**")
+                                    col_evt2.caption(f"Tipo: {evt.tipo}")
+                                    
+                                    status_icon = "✅ Concluído" if evt.concluido else "⏳ Pendente"
+                                    if col_evt3.button(status_icon, key=f"btn_status_evt_proc_{evt.id}"):
+                                        evt.concluido = 1 if evt.concluido == 0 else 0
+                                        db.commit()
+                                        st.rerun()
+                        else:
+                            st.info("Não há compromissos agendados para este processo.")
+                            st.caption("Vá até a aba 'Agenda' no menu lateral para adicionar novos eventos.")
+
+                    # --- ABA 3: FINANCEIRO ---
                     with tab_financeiro:
                         st.subheader("Controle Financeiro")
                         
@@ -474,7 +501,7 @@ def show_processos(db: Session):
                         else:
                             st.caption("Nenhum lançamento financeiro registrado.")
 
-                    # --- ABA 3: DIÁRIO ---
+                    # --- ABA 4: DIÁRIO ---
                     with tab_diario:
                         st.subheader("Notas do Processo")
                         
@@ -491,7 +518,7 @@ def show_processos(db: Session):
                         for nota in notas:
                             st.text(f"{nota.data_registro.strftime('%d/%m/%Y %H:%M')} - {nota.texto}")
 
-                    # --- ABA 4: EDITAR ---
+                    # --- ABA 5: EDITAR ---
                     with tab_editar:
                         st.subheader("Editar Dados do Processo")
                         with st.form(key=f"form_editar_proc_{processo.id}"):
