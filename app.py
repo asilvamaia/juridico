@@ -6,7 +6,7 @@ from sqlalchemy import or_, desc, func
 import base64
 import mimetypes
 import io
-import time  # Biblioteca time para controle de delay nas mensagens
+import time
 
 # Importações Locais
 import models
@@ -102,8 +102,8 @@ def show_advogados(db: Session):
                     db.commit()
                     
                     st.success("✅ Advogado cadastrado com sucesso!")
-                    time.sleep(1.5) # Espera para o usuário ler a mensagem
-                    st.rerun() # Recarrega a página
+                    time.sleep(1.5)
+                    st.rerun()
                 else:
                     st.error("⚠️ Nome e OAB são obrigatórios.")
 
@@ -285,7 +285,6 @@ def show_clientes(db: Session):
                     db.add(novo_cliente)
                     db.commit()
                     
-                    # Cria pastas
                     services.criar_estrutura_cliente(nome, novo_cliente.id)
                     
                     st.success(f"✅ Cliente {nome} cadastrado com sucesso!")
@@ -347,7 +346,6 @@ def show_processos(db: Session):
                     db.add(novo_processo)
                     db.commit()
                     
-                    # Cria pastas
                     objeto_cliente = db.query(Cliente).get(id_cliente)
                     services.criar_estrutura_processo(objeto_cliente.nome, id_cliente, numero_processo)
                     
@@ -372,6 +370,16 @@ def show_processos(db: Session):
                     col_info2.write(f"**Início:** {format_date_br(processo.data_inicio)}")
                     col_info3.info(f"Status: {processo.status}")
                     
+                    # --- DADOS ADICIONAIS RESTAURADOS ---
+                    if processo.observacoes:
+                        st.markdown(f"**📝 Observações:** {processo.observacoes}")
+
+                    # --- ESTRATÉGIA COM TOGGLE DE PRIVACIDADE RESTAURADA ---
+                    if processo.estrategia:
+                        mostrar_estrategia = st.toggle("👁️ Ver Estratégia (Confidencial)", key=f"toggle_est_{processo.id}")
+                        if mostrar_estrategia:
+                            st.warning(f"**🧠 Estratégia:** {processo.estrategia}")
+                    
                     st.markdown("---")
                     
                     # Abas internas do Processo
@@ -383,7 +391,6 @@ def show_processos(db: Session):
                     with tab_arquivos:
                         st.subheader("Gestão de Documentos")
                         
-                        # Upload
                         arquivos_upload = st.file_uploader("Anexar documentos", key=f"upload_{processo.id}", accept_multiple_files=True)
                         if arquivos_upload:
                             for arquivo in arquivos_upload:
@@ -394,7 +401,6 @@ def show_processos(db: Session):
                         
                         st.markdown("---")
                         
-                        # Listagem de Arquivos
                         lista_arquivos = services.listar_arquivos(processo.cliente.nome, processo.cliente.id, processo.numero_processo)
                         
                         if lista_arquivos:
@@ -403,34 +409,28 @@ def show_processos(db: Session):
                                 
                                 col_nome.text(f"📄 {nome_arquivo}")
                                 
-                                # Ações (IA, Ver, Excluir)
                                 with col_acoes:
                                     col_btn_ia, col_btn_ver, col_btn_del = st.columns(3)
                                     
-                                    # Botão IA (Apenas para PDF)
                                     if nome_arquivo.lower().endswith(".pdf"):
                                         if col_btn_ia.button("✨ IA", key=f"btn_ia_{processo.id}_{nome_arquivo}", help="Resumir com Gemma 3"):
                                             with st.spinner("Lendo PDF e gerando resumo..."):
                                                 caminho_completo = services.get_caminho_arquivo(processo.cliente.nome, processo.cliente.id, processo.numero_processo, nome_arquivo)
                                                 texto_pdf = services.extrair_texto_pdf(caminho_completo)
                                                 
-                                                # Pega chave da sessão
                                                 api_key = st.session_state.get("google_key")
                                                 resumo_ia = services.resumir_com_google(texto_pdf, api_key)
                                                 
                                                 st.session_state[f"resumo_{processo.id}_{nome_arquivo}"] = resumo_ia
                                     
-                                    # Botão Visualizar
                                     if col_btn_ver.button("👁️", key=f"btn_ver_{processo.id}_{nome_arquivo}"):
                                         caminho_completo = services.get_caminho_arquivo(processo.cliente.nome, processo.cliente.id, processo.numero_processo, nome_arquivo)
                                         render_file_preview(caminho_completo, nome_arquivo)
                                     
-                                    # Botão Excluir
                                     if col_btn_del.button("❌", key=f"btn_del_{processo.id}_{nome_arquivo}"):
                                         services.excluir_arquivo(processo.cliente.nome, processo.cliente.id, processo.numero_processo, nome_arquivo)
                                         st.rerun()
 
-                                # Exibe o resumo da IA se existir na sessão
                                 if f"resumo_{processo.id}_{nome_arquivo}" in st.session_state:
                                     st.info(st.session_state[f"resumo_{processo.id}_{nome_arquivo}"])
                         else:
@@ -440,7 +440,6 @@ def show_processos(db: Session):
                     with tab_financeiro:
                         st.subheader("Controle Financeiro")
                         
-                        # Formulário Rápido
                         with st.form(key=f"form_fin_{processo.id}"):
                             col_f1, col_f2, col_f3 = st.columns(3)
                             desc_fin = col_f1.text_input("Descrição (Ex: Honorários)")
@@ -460,7 +459,6 @@ def show_processos(db: Session):
                                 time.sleep(1)
                                 st.rerun()
                         
-                        # Tabela
                         lancamentos = db.query(Financeiro).filter(Financeiro.processo_id == processo.id).all()
                         if lancamentos:
                             for lanc in lancamentos:
@@ -468,7 +466,6 @@ def show_processos(db: Session):
                                 col_l1.write(f"**{lanc.descricao}** ({lanc.tipo})")
                                 col_l2.write(format_moeda(lanc.valor))
                                 
-                                # Botão de Status (Pago/Pendente)
                                 status_icon = "✅ Pago" if lanc.status == "Pago" else "⏳ Pendente"
                                 if col_l3.button(status_icon, key=f"btn_status_{lanc.id}"):
                                     lanc.status = "Pendente" if lanc.status == "Pago" else "Pago"
@@ -502,7 +499,6 @@ def show_processos(db: Session):
                             ed_tribunal = st.text_input("Tribunal", value=processo.tribunal)
                             ed_parte = st.text_input("Parte Contrária", value=processo.parte_contraria)
                             
-                            # Logica para achar o index correto do selectbox
                             lista_status_edit = ["Em andamento", "Suspenso", "Sentenciado", "Arquivado"]
                             idx_status = lista_status_edit.index(processo.status) if processo.status in lista_status_edit else 0
                             novo_status = st.selectbox("Status", lista_status_edit, index=idx_status)
@@ -512,15 +508,14 @@ def show_processos(db: Session):
                             ed_obs = st.text_area("Observações", value=processo.observacoes)
                             ed_estrategia = st.text_area("Estratégia", value=processo.estrategia)
                             
-                            if st.form_submit_button("Atualizar Dados"):
+                            if st.form_submit_button("Atualizar Processo"):
                                 processo.tribunal = ed_tribunal
                                 processo.parte_contraria = ed_parte
                                 processo.status = novo_status
                                 processo.observacoes = ed_obs
                                 processo.estrategia = ed_estrategia
-                                
                                 db.commit()
-                                st.success("Dados atualizados!")
+                                st.success("Status atualizado!")
                                 time.sleep(1)
                                 st.rerun()
         else:
@@ -538,7 +533,6 @@ def show_agenda(db: Session):
         lista_processos = db.query(Processo).all()
         
         if lista_processos:
-            # Opções mostrando Número do Processo - Nome do Cliente
             opcoes_processos = {f"{p.numero_processo} - {p.cliente.nome}": p.id for p in lista_processos}
             
             with st.form("form_agenda"):
@@ -567,7 +561,6 @@ def show_agenda(db: Session):
     # Coluna Direita: Lista de Compromissos
     with col_lista:
         st.subheader("Próximos Eventos")
-        # Filtra eventos não concluídos
         eventos = db.query(Audiencia).filter(Audiencia.concluido == 0).order_by(Audiencia.data_hora).all()
         
         if eventos:
@@ -578,7 +571,6 @@ def show_agenda(db: Session):
                     c1.write(f"⏰ {evento.data_hora.strftime('%H:%M')}")
                     
                     c2.write(f"**{evento.titulo}**")
-                    # Busca nome do cliente para contexto
                     proc = db.query(Processo).get(evento.processo_id)
                     if proc and proc.cliente:
                         c2.caption(f"Proc: {proc.numero_processo} | Cli: {proc.cliente.nome}")
@@ -619,27 +611,19 @@ def main():
     st.sidebar.title(f"Olá, {st.session_state.username}")
     
     # --- LÓGICA DE API KEY (SECRETS) ---
-    # Passo 1: Tenta ler dos Secrets (Nuvem ou Local)
-    chave_encontrada_nos_secrets = False
+    api_key_nos_secrets = None
     try:
         if "GOOGLE_API_KEY" in st.secrets:
-            # Se achou no secrets, carrega automaticamente e MARCA como encontrada
-            st.session_state["google_key"] = st.secrets["GOOGLE_API_KEY"]
-            chave_encontrada_nos_secrets = True
+            api_key_nos_secrets = st.secrets["GOOGLE_API_KEY"]
+            st.session_state["google_key"] = api_key_nos_secrets
     except (FileNotFoundError, KeyError):
-        # Ignora erro se não tiver arquivo secrets.toml local
         pass
     
-    # Passo 2: Decisão de mostrar ou não o campo de input
-    # Só mostramos se a chave NÃO foi encontrada nos secrets E nem digitada manualmente antes
-    
+    # Se NÃO achou nos secrets e NÃO tem na sessão, mostra o campo
     chave_esta_configurada = False
-    
-    # Verifica se já temos uma chave válida na sessão (vinda dos secrets ou input anterior)
     if "google_key" in st.session_state and st.session_state["google_key"]:
         chave_esta_configurada = True
-    
-    # Se a chave NÃO está configurada, mostra o campo para o usuário digitar
+
     if not chave_esta_configurada:
         st.sidebar.markdown("### 🤖 Configuração IA")
         input_chave_manual = st.sidebar.text_input(
@@ -650,7 +634,7 @@ def main():
         
         if input_chave_manual:
             st.session_state["google_key"] = input_chave_manual
-            st.rerun() # Recarrega para limpar a interface e aplicar a chave
+            st.rerun()
             
     # -----------------------------------
 
