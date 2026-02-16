@@ -6,7 +6,7 @@ from sqlalchemy import or_, desc, func
 import base64
 import mimetypes
 import io
-import time  # Biblioteca time para controle de exibição de mensagens
+import time  # Biblioteca time para controle de delay nas mensagens
 
 # Importações Locais
 import models
@@ -72,6 +72,7 @@ def render_file_preview(filepath, filename):
 # --- Telas do Sistema ---
 
 def show_advogados(db: Session):
+    """Tela de Gestão de Advogados."""
     st.header("⚖️ Cadastro de Advogados (Banca)")
     st.info("Cadastre aqui os advogados que aparecerão nas procurações.")
     
@@ -80,29 +81,29 @@ def show_advogados(db: Session):
     # Aba: Novo Advogado
     with tab2:
         with st.form("form_novo_advogado"):
-            nome = st.text_input("Nome Completo")
-            oab = st.text_input("OAB (Ex: OAB/SP 123.456)")
+            nome_completo = st.text_input("Nome Completo")
+            numero_oab = st.text_input("OAB (Ex: OAB/SP 123.456)")
             nacionalidade = st.text_input("Nacionalidade", value="brasileiro(a)")
             estado_civil = st.text_input("Estado Civil", value="casado(a)")
-            endereco = st.text_area("Endereço Profissional")
+            endereco_profissional = st.text_area("Endereço Profissional")
             
             submitted = st.form_submit_button("Salvar Advogado")
             
             if submitted:
-                if nome and oab:
+                if nome_completo and numero_oab:
                     novo_advogado = Advogado(
-                        nome=nome,
-                        oab=oab,
+                        nome=nome_completo,
+                        oab=numero_oab,
                         nacionalidade=nacionalidade,
                         estado_civil=estado_civil,
-                        endereco=endereco
+                        endereco=endereco_profissional
                     )
                     db.add(novo_advogado)
                     db.commit()
                     
                     st.success("✅ Advogado cadastrado com sucesso!")
-                    time.sleep(1.5) # Espera 1.5s para o usuário ler a mensagem
-                    st.rerun() # Recarrega a página para atualizar a lista
+                    time.sleep(1.5) # Espera para o usuário ler a mensagem
+                    st.rerun() # Recarrega a página
                 else:
                     st.error("⚠️ Nome e OAB são obrigatórios.")
 
@@ -110,15 +111,15 @@ def show_advogados(db: Session):
     with tab1:
         advogados = db.query(Advogado).all()
         if advogados:
-            for adv in advogados:
-                with st.expander(f"🎓 {adv.nome} - {adv.oab}"):
-                    st.write(f"**Nacionalidade:** {adv.nacionalidade}")
-                    st.write(f"**Estado Civil:** {adv.estado_civil}")
-                    st.write(f"**Endereço:** {adv.endereco}")
+            for advogado in advogados:
+                with st.expander(f"🎓 {advogado.nome} - {advogado.oab}"):
+                    st.write(f"**Nacionalidade:** {advogado.nacionalidade}")
+                    st.write(f"**Estado Civil:** {advogado.estado_civil}")
+                    st.write(f"**Endereço:** {advogado.endereco}")
                     
                     st.markdown("---")
-                    if st.button("🗑️ Excluir Advogado", key=f"del_adv_{adv.id}"):
-                        db.delete(adv)
+                    if st.button("🗑️ Excluir Advogado", key=f"del_adv_{advogado.id}"):
+                        db.delete(advogado)
                         db.commit()
                         st.success("Advogado removido.")
                         time.sleep(1)
@@ -127,6 +128,7 @@ def show_advogados(db: Session):
             st.info("Nenhum advogado cadastrado.")
 
 def show_calculadora_prazos():
+    """Tela da Calculadora de Prazos."""
     st.header("📆 Calculadora de Prazos Processuais")
     
     with st.container(border=True):
@@ -144,6 +146,7 @@ def show_calculadora_prazos():
             col_res2.info("⚠️ Nota: O sistema considera feriados nacionais. Verifique feriados locais/municipais manualmente.")
 
 def show_dashboard(db: Session):
+    """Tela Inicial - Dashboard."""
     st.header("📊 Dashboard Geral")
     
     col1, col2, col3, col4 = st.columns(4)
@@ -182,6 +185,7 @@ def show_dashboard(db: Session):
         st.info("Nenhum compromisso pendente.")
 
 def show_clientes(db: Session):
+    """Tela de Gestão de Clientes."""
     st.header("📁 Gestão de Clientes")
     tab1, tab2 = st.tabs(["Listar/Buscar", "Novo Cliente"])
     
@@ -291,6 +295,7 @@ def show_clientes(db: Session):
                     st.error("Nome e CPF são obrigatórios.")
 
 def show_processos(db: Session):
+    """Tela de Gestão de Processos."""
     st.header("⚖️ Controle de Processos")
     
     tab1, tab2 = st.tabs(["Meus Processos", "Novo Processo"])
@@ -309,12 +314,10 @@ def show_processos(db: Session):
         with st.form("form_novo_processo"):
             cliente_selecionado = st.selectbox("Selecione o Cliente", list(mapa_clientes.keys()))
             
-            # Linha 1
             col_proc1, col_proc2 = st.columns(2)
             numero_processo = col_proc1.text_input("Número do Processo (CNJ)")
             tribunal = col_proc2.text_input("Vara / Tribunal")
             
-            # Linha 2
             col_proc3, col_proc4 = st.columns(2)
             tipo_acao = col_proc3.selectbox("Tipo de Ação", ["Cível", "Trabalhista", "Criminal", "Família", "Tributário", "Previdenciário", "Outros"])
             status = col_proc4.selectbox("Status", ["Em andamento", "Suspenso", "Sentenciado", "Arquivado"])
@@ -505,24 +508,26 @@ def show_processos(db: Session):
                             novo_status = st.selectbox("Status", lista_status_edit, index=idx_status)
                             
                             st.markdown("---")
-                            st.markdown("**Informações Adicionais**")
+                            st.markdown("**Anotações Privadas**")
                             ed_obs = st.text_area("Observações", value=processo.observacoes)
                             ed_estrategia = st.text_area("Estratégia", value=processo.estrategia)
                             
-                            if st.form_submit_button("Atualizar Processo"):
+                            if st.form_submit_button("Atualizar Dados"):
                                 processo.tribunal = ed_tribunal
                                 processo.parte_contraria = ed_parte
                                 processo.status = novo_status
                                 processo.observacoes = ed_obs
                                 processo.estrategia = ed_estrategia
+                                
                                 db.commit()
-                                st.success("Processo atualizado com sucesso!")
-                                time.sleep(1.5)
+                                st.success("Dados atualizados!")
+                                time.sleep(1)
                                 st.rerun()
         else:
             st.info("Nenhum processo cadastrado.")
 
 def show_agenda(db: Session):
+    """Tela da Agenda Jurídica."""
     st.header("📅 Agenda Jurídica")
     
     col_novo, col_lista = st.columns([1, 2])
@@ -533,7 +538,8 @@ def show_agenda(db: Session):
         lista_processos = db.query(Processo).all()
         
         if lista_processos:
-            opcoes_processos = {f"{p.numero_processo}": p.id for p in lista_processos}
+            # Opções mostrando Número do Processo - Nome do Cliente
+            opcoes_processos = {f"{p.numero_processo} - {p.cliente.nome}": p.id for p in lista_processos}
             
             with st.form("form_agenda"):
                 proc_selecionado = st.selectbox("Vincular ao Processo", list(opcoes_processos.keys()))
@@ -574,7 +580,8 @@ def show_agenda(db: Session):
                     c2.write(f"**{evento.titulo}**")
                     # Busca nome do cliente para contexto
                     proc = db.query(Processo).get(evento.processo_id)
-                    c2.caption(f"Proc: {proc.numero_processo} | Cli: {proc.cliente.nome}")
+                    if proc and proc.cliente:
+                        c2.caption(f"Proc: {proc.numero_processo} | Cli: {proc.cliente.nome}")
                     
                     if c3.button("Concluir", key=f"btn_ok_evt_{evento.id}"):
                         evento.concluido = 1
@@ -584,6 +591,7 @@ def show_agenda(db: Session):
             st.info("Agenda vazia! 🎉")
 
 def show_relatorios(db: Session):
+    """Tela de Backups."""
     st.header("💾 Backup e Segurança")
     
     st.info("Gera um arquivo .zip contendo o banco de dados e todos os documentos anexados.")
@@ -610,17 +618,16 @@ def main():
     # 2. Configurações Globais e Sidebar
     st.sidebar.title(f"Olá, {st.session_state.username}")
     
-    # --- LÓGICA DE API KEY (SECRETS) - CORRIGIDA ---
-    
+    # --- LÓGICA DE API KEY (SECRETS) ---
     # Passo 1: Tenta ler dos Secrets (Nuvem ou Local)
-    api_key_nos_secrets = None
+    chave_encontrada_nos_secrets = False
     try:
         if "GOOGLE_API_KEY" in st.secrets:
-            api_key_nos_secrets = st.secrets["GOOGLE_API_KEY"]
-            # Salva na sessão se achou
-            st.session_state["google_key"] = api_key_nos_secrets
+            # Se achou no secrets, carrega automaticamente e MARCA como encontrada
+            st.session_state["google_key"] = st.secrets["GOOGLE_API_KEY"]
+            chave_encontrada_nos_secrets = True
     except (FileNotFoundError, KeyError):
-        # Ignora se não achar o arquivo local
+        # Ignora erro se não tiver arquivo secrets.toml local
         pass
     
     # Passo 2: Decisão de mostrar ou não o campo de input
@@ -643,9 +650,9 @@ def main():
         
         if input_chave_manual:
             st.session_state["google_key"] = input_chave_manual
-            st.rerun() # Recarrega para limpar a tela e aplicar a chave
+            st.rerun() # Recarrega para limpar a interface e aplicar a chave
             
-    # -----------------------------------------------
+    # -----------------------------------
 
     # Menu de Navegação
     menu_selecionado = st.sidebar.radio(

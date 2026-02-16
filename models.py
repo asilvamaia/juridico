@@ -6,18 +6,20 @@ from datetime import datetime
 # --- Configuração do Banco de Dados SQLite ---
 DATABASE_URL = "sqlite:///juris_gestao.db"
 
-# Cria a base declarativa do SQLAlchemy
+# Base declarativa do SQLAlchemy
 Base = declarative_base()
 
-# Cria o motor de conexão
-# check_same_thread=False é necessário para SQLite funcionar bem com Streamlit
+# Motor de conexão (check_same_thread=False é vital para SQLite no Streamlit)
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 
-# Cria a fábrica de sessões
+# Fábrica de sessões
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def get_db():
-    """Função geradora para obter uma sessão do banco de dados de forma segura."""
+    """
+    Função geradora para obter uma sessão do banco de dados de forma segura.
+    Garante que a conexão seja fechada após o uso.
+    """
     db = SessionLocal()
     try:
         yield db
@@ -27,7 +29,7 @@ def get_db():
 # --- Definição das Tabelas (Models) ---
 
 class Usuario(Base):
-    """Tabela de usuários para autenticação no sistema."""
+    """Tabela de usuários para login e autenticação."""
     __tablename__ = "usuarios"
     
     id = Column(Integer, primary_key=True, index=True)
@@ -71,12 +73,12 @@ class Processo(Base):
     # Dados Principais
     numero_processo = Column(String, unique=True, nullable=False)
     tribunal = Column(String)
-    tipo_acao = Column(String)
+    tipo_acao = Column(String)      # Ex: Cível, Trabalhista
     parte_contraria = Column(String)
-    status = Column(String) # Ex: Em andamento, Suspenso, Arquivado
+    status = Column(String)         # Ex: Em andamento, Suspenso
     data_inicio = Column(Date)
     
-    # Dados Estratégicos
+    # Dados Estratégicos e Privados
     observacoes = Column(Text)
     estrategia = Column(Text) 
     
@@ -101,7 +103,7 @@ class Audiencia(Base):
     processo = relationship("Processo", back_populates="audiencias")
 
 class DiarioProcessual(Base):
-    """Tabela para anotações diárias/andamentos do processo."""
+    """Tabela para anotações diárias e andamentos do processo."""
     __tablename__ = "diario"
     
     id = Column(Integer, primary_key=True, index=True)

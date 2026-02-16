@@ -7,9 +7,9 @@ import holidays
 from docxtpl import DocxTemplate
 import io
 from pypdf import PdfReader
-from google import genai  # Biblioteca oficial atualizada do Google (v1.0+)
+from google import genai  # Biblioteca oficial do Google (v1.0+)
 
-# Configuração de Diretórios
+# Configuração de Diretórios Básicos
 BASE_DIR = Path("dados")
 TEMPLATES_DIR = Path("templates")
 
@@ -20,28 +20,28 @@ def sanitize_filename(name):
     return re.sub(r'[<>:"/\\|?*]', '', str(name)).strip().replace(' ', '_')
 
 def get_cliente_dir(cliente_nome, cliente_id):
-    """Retorna o objeto Path para a pasta do cliente."""
+    """Retorna o objeto Path para a pasta raiz de um cliente."""
     safe_name = sanitize_filename(cliente_nome)
     folder_name = f"{safe_name}_{cliente_id}"
     path = BASE_DIR / "clientes" / folder_name
     return path
 
 def get_processo_dir(cliente_nome, cliente_id, numero_processo):
-    """Retorna o objeto Path para a pasta de arquivos de um processo."""
+    """Retorna o objeto Path para a pasta de arquivos de um processo específico."""
     client_path = get_cliente_dir(cliente_nome, cliente_id)
     safe_proc = sanitize_filename(numero_processo)
     proc_path = client_path / "processos" / safe_proc / "arquivos_anexados"
     return proc_path
 
 def criar_estrutura_cliente(cliente_nome, cliente_id):
-    """Cria a estrutura de pastas para um novo cliente."""
+    """Cria a estrutura de pastas física para um novo cliente."""
     path = get_cliente_dir(cliente_nome, cliente_id)
     path.mkdir(parents=True, exist_ok=True)
     
-    # Garante que a pasta de templates também exista
+    # Garante que a pasta de templates também exista para evitar erros
     TEMPLATES_DIR.mkdir(exist_ok=True)
     
-    # Cria um arquivo JSON com metadados básicos
+    # Cria um arquivo JSON com metadados básicos (opcional, para controle futuro)
     import json
     meta_path = path / "dados_cliente.json"
     with open(meta_path, 'w', encoding='utf-8') as f:
@@ -57,7 +57,7 @@ def criar_estrutura_processo(cliente_nome, cliente_id, numero_processo):
     path.mkdir(parents=True, exist_ok=True)
 
 def salvar_arquivo(uploaded_file, cliente_nome, cliente_id, numero_processo):
-    """Salva um arquivo enviado pelo Streamlit na pasta correta."""
+    """Salva um arquivo enviado pelo Streamlit na pasta correta do processo."""
     target_dir = get_processo_dir(cliente_nome, cliente_id, numero_processo)
     
     # Cria a pasta se ela não existir
