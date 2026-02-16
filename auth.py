@@ -1,135 +1,54 @@
-import sqlalchemy
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, ForeignKey, Date, Float
-from sqlalchemy.orm import declarative_base, sessionmaker, relationship
-from datetime import datetime
+import bcrypt
+import streamlit as st
+from models import SessionLocal, Usuario, init_db
 
-# --- Configuração do Banco de Dados SQLite ---
-DATABASE_URL = "sqlite:///juris_gestao.db"
+def hash_password(password):
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
-# Base declarativa do SQLAlchemy
-Base = declarative_base()
+def verify_password(password, hashed):
+    return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
 
-# Motor de conexão (check_same_thread=False é vital para SQLite no Streamlit)
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-
-# Fábrica de sessões
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-def get_db():
-    """
-    Função geradora para obter uma sessão do banco de dados de forma segura.
-    Garante que a conexão seja fechada após o uso.
-    """
+def criar_usuario_inicial():
     db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+    user = db.query(Usuario).first()
+    if not user:
+        hashed = hash_password("admin123") 
+        novo_user = Usuario(username="admin", password_hash=hashed)
+        db.add(novo_user)
+        db.commit()
+    db.close()
 
-# --- Definição das Tabelas (Models) ---
-
-class Usuario(Base):
-    """Tabela de usuários para login e autenticação."""
-    __tablename__ = "usuarios"
+def check_login(username, password):
+    db = SessionLocal()
+    user = db.query(Usuario).filter(Usuario.username == username).first()
+    db.close()
     
-    id = Column(Integer, primary_key=True, index=True)
-    username = Column(String, unique=True, nullable=False)
-    password_hash = Column(String, nullable=False)
+    if user and verify_password(password, user.password_hash):
+        return True
+    return False
 
-class Advogado(Base):
-    """Tabela para cadastro da banca de advogados (usado nas procurações)."""
-    __tablename__ = "advogados"
+def login_page():
+    st.markdown("## ⚖️ JurisFlow - Acesso Restrito")
     
-    id = Column(Integer, primary_key=True, index=True)
-    nome = Column(String, nullable=False)
-    oab = Column(String, nullable=False) # Ex: OAB/SP 123.456
-    nacionalidade = Column(String, default="brasileiro(a)")
-    estado_civil = Column(String, default="casado(a)")
-    endereco = Column(Text, nullable=False)
+    if 'logged_in' not in st.session_state:
+        st.session_state.logged_in = False
 
-class Cliente(Base):
-    """Tabela de Clientes."""
-    __tablename__ = "clientes"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    nome = Column(String, nullable=False)
-    cpf_cnpj = Column(String, unique=True, nullable=False)
-    telefone = Column(String)
-    email = Column(String)
-    endereco = Column(Text)
-    observacoes = Column(Text)
-    data_cadastro = Column(DateTime, default=datetime.now)
-    
-    # Relacionamento: Um cliente pode ter vários processos
-    processos = relationship("Processo", back_populates="cliente", cascade="all, delete-orphan")
+    if not st.session_state.logged_in:
+        with st.form("login_form"):
+            usuario_input = st.text_input("Usuário")
+            senha_input = st.text_input("Senha", type="password")
+            botao_entrar = st.form_submit_button("Entrar no Sistema")
+            
+            if botao_entrar:
+                if check_login(usuario_input, senha_input):
+                    st.session_state.logged_in = True
+                    st.session_state.username = usuario_input
+                    st.rerun()
+                else:
+                    st.error("Usuário ou senha incorretos.")
+        return False
+    return True
 
-class Processo(Base):
-    """Tabela de Processos Judiciais."""
-    __tablename__ = "processos"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=False)
-    
-    # Dados Principais
-    numero_processo = Column(String, unique=True, nullable=False)
-    tribunal = Column(String)
-    tipo_acao = Column(String)      # Ex: Cível, Trabalhista
-    parte_contraria = Column(String)
-    status = Column(String)         # Ex: Em andamento, Suspenso
-    data_inicio = Column(Date)
-    
-    # Dados Estratégicos e Privados
-    observacoes = Column(Text)
-    estrategia = Column(Text) 
-    
-    # Relacionamentos
-    cliente = relationship("Cliente", back_populates="processos")
-    audiencias = relationship("Audiencia", back_populates="processo", cascade="all, delete-orphan")
-    diario = relationship("DiarioProcessual", back_populates="processo", cascade="all, delete-orphan")
-    financeiro = relationship("Financeiro", back_populates="processo", cascade="all, delete-orphan")
-
-class Audiencia(Base):
-    """Tabela de Compromissos (Audiências, Prazos, Reuniões)."""
-    __tablename__ = "audiencias"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    processo_id = Column(Integer, ForeignKey("processos.id"), nullable=False)
-    titulo = Column(String, nullable=False)
-    data_hora = Column(DateTime, nullable=False)
-    tipo = Column(String) # Ex: Audiência, Prazo, Reunião
-    observacoes = Column(Text)
-    concluido = Column(Integer, default=0) # 0 = Pendente, 1 = Concluído
-
-    processo = relationship("Processo", back_populates="audiencias")
-
-class DiarioProcessual(Base):
-    """Tabela para anotações diárias e andamentos do processo."""
-    __tablename__ = "diario"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    processo_id = Column(Integer, ForeignKey("processos.id"), nullable=False)
-    data_registro = Column(DateTime, default=datetime.now)
-    texto = Column(Text, nullable=False)
-
-    processo = relationship("Processo", back_populates="diario")
-
-class Financeiro(Base):
-    """Tabela para controle de Honorários e Despesas por processo."""
-    __tablename__ = "financeiro"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    processo_id = Column(Integer, ForeignKey("processos.id"), nullable=False)
-    descricao = Column(String, nullable=False)
-    tipo = Column(String, nullable=False) # 'Honorário' ou 'Despesa'
-    valor = Column(Float, nullable=False)
-    data_vencimento = Column(Date)
-    status = Column(String, default="Pendente") # 'Pendente' ou 'Pago'
-
-    processo = relationship("Processo", back_populates="financeiro")
-
-def init_db():
-    """Função para criar todas as tabelas no banco de dados se elas não existirem."""
-    Base.metadata.create_all(bind=engine)
-
-if __name__ == "__main__":
-    init_db()
+def logout():
+    st.session_state.logged_in = False
+    st.rerun()
