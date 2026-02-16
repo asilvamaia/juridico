@@ -3,12 +3,15 @@ import streamlit as st
 from models import SessionLocal, Usuario, init_db
 
 def hash_password(password):
+    """Gera um hash seguro da senha."""
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
 def verify_password(password, hashed):
+    """Verifica se a senha bate com o hash."""
     return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
 
 def criar_usuario_inicial():
+    """Cria o usuário admin padrão se o banco estiver vazio."""
     db = SessionLocal()
     user = db.query(Usuario).first()
     if not user:
@@ -19,6 +22,7 @@ def criar_usuario_inicial():
     db.close()
 
 def check_login(username, password):
+    """Verifica credenciais no banco."""
     db = SessionLocal()
     user = db.query(Usuario).filter(Usuario.username == username).first()
     db.close()
@@ -28,6 +32,7 @@ def check_login(username, password):
     return False
 
 def login_page():
+    """Renderiza a tela de login."""
     st.markdown("## ⚖️ JurisFlow - Acesso Restrito")
     
     if 'logged_in' not in st.session_state:
@@ -50,5 +55,6 @@ def login_page():
     return True
 
 def logout():
+    """Realiza logout."""
     st.session_state.logged_in = False
     st.rerun()

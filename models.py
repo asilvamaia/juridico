@@ -3,26 +3,38 @@ from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, F
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from datetime import datetime
 
-# Configuração do Banco de Dados
+# Configuração do Banco de Dados SQLite
 DATABASE_URL = "sqlite:///juris_gestao.db"
 Base = declarative_base()
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def get_db():
+    """Gerador de sessão de banco de dados."""
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
 
-# --- Modelos ---
+# --- Definição das Tabelas ---
 
 class Usuario(Base):
+    """Tabela de usuários para login."""
     __tablename__ = "usuarios"
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, nullable=False)
     password_hash = Column(String, nullable=False)
+
+class Advogado(Base):
+    """Tabela para cadastro da banca de advogados (para procurações)."""
+    __tablename__ = "advogados"
+    id = Column(Integer, primary_key=True, index=True)
+    nome = Column(String, nullable=False)
+    oab = Column(String, nullable=False) # Ex: OAB/SP 123.456
+    nacionalidade = Column(String, default="brasileiro(a)")
+    estado_civil = Column(String, default="casado(a)")
+    endereco = Column(Text, nullable=False)
 
 class Cliente(Base):
     __tablename__ = "clientes"
@@ -35,6 +47,7 @@ class Cliente(Base):
     observacoes = Column(Text)
     data_cadastro = Column(DateTime, default=datetime.now)
     
+    # Relacionamento: Um cliente tem muitos processos
     processos = relationship("Processo", back_populates="cliente", cascade="all, delete-orphan")
 
 class Processo(Base):
@@ -50,6 +63,7 @@ class Processo(Base):
     observacoes = Column(Text)
     estrategia = Column(Text) 
     
+    # Relacionamentos
     cliente = relationship("Cliente", back_populates="processos")
     audiencias = relationship("Audiencia", back_populates="processo", cascade="all, delete-orphan")
     diario = relationship("DiarioProcessual", back_populates="processo", cascade="all, delete-orphan")
@@ -61,7 +75,7 @@ class Audiencia(Base):
     processo_id = Column(Integer, ForeignKey("processos.id"), nullable=False)
     titulo = Column(String, nullable=False)
     data_hora = Column(DateTime, nullable=False)
-    tipo = Column(String) 
+    tipo = Column(String) # Audiência, Prazo, Reunião
     observacoes = Column(Text)
     concluido = Column(Integer, default=0) 
 
@@ -89,6 +103,7 @@ class Financeiro(Base):
     processo = relationship("Processo", back_populates="financeiro")
 
 def init_db():
+    """Cria todas as tabelas no banco de dados se não existirem."""
     Base.metadata.create_all(bind=engine)
 
 if __name__ == "__main__":
