@@ -5,3 +5,5 @@ pandas
 openpyxl
 docxtpl 
 holidays
+pypdf 
+google-generativeai

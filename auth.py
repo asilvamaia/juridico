@@ -46,8 +46,6 @@ def login_page():
                     st.rerun()
                 else:
                     st.error("Usuário ou senha incorretos.")
-        
-        st.info("Primeiro acesso? Usuário: `admin` | Senha: `admin123`")
         return False
     return True
 

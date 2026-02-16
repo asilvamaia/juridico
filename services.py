@@ -6,9 +6,13 @@ from datetime import datetime, timedelta
 import holidays
 from docxtpl import DocxTemplate
 import io
+from pypdf import PdfReader
+import google.generativeai as genai
 
 BASE_DIR = Path("dados")
-TEMPLATES_DIR = Path("templates") # Pasta para modelos do Word
+TEMPLATES_DIR = Path("templates")
+
+# --- Funções Básicas de Arquivo ---
 
 def sanitize_filename(name):
     return re.sub(r'[<>:"/\\|?*]', '', str(name)).strip().replace(' ', '_')
@@ -28,8 +32,6 @@ def get_processo_dir(cliente_nome, cliente_id, numero_processo):
 def criar_estrutura_cliente(cliente_nome, cliente_id):
     path = get_cliente_dir(cliente_nome, cliente_id)
     path.mkdir(parents=True, exist_ok=True)
-    
-    # Cria pasta de templates se não existir
     TEMPLATES_DIR.mkdir(exist_ok=True)
     
     import json
@@ -81,36 +83,23 @@ def criar_backup():
         (BASE_DIR / "database_backup.db").unlink()
     return f"{zip_name}.zip"
 
-# --- Novas Funcionalidades ---
+# --- Funcionalidades Extras ---
 
 def calcular_prazo_util(data_inicio, dias_uteis):
-    """Calcula data final considerando feriados BR e fins de semana."""
     feriados_br = holidays.BR()
     data_atual = data_inicio
     dias_restantes = dias_uteis
-    
     while dias_restantes > 0:
         data_atual += timedelta(days=1)
-        # Se for fim de semana (5=Sab, 6=Dom) ou feriado, não conta
         if data_atual.weekday() < 5 and data_atual not in feriados_br:
             dias_restantes -= 1
-            
     return data_atual
 
 def gerar_procuracao(dados_cliente):
-    """
-    Gera um documento Word preenchido.
-    Requer um arquivo 'template_procuracao.docx' na pasta 'templates'.
-    """
     template_path = TEMPLATES_DIR / "template_procuracao.docx"
-    
-    # Cria um template de exemplo se não existir (para evitar erro no primeiro uso)
     if not template_path.exists():
         return None
-
     doc = DocxTemplate(template_path)
-    
-    # Contexto: chaves que estão no Word {{chave}}
     context = {
         'nome_cliente': dados_cliente.nome,
         'cpf_cliente': dados_cliente.cpf_cnpj,
@@ -118,11 +107,57 @@ def gerar_procuracao(dados_cliente):
         'email_cliente': dados_cliente.email,
         'data_hoje': datetime.now().strftime("%d/%m/%Y")
     }
-    
     doc.render(context)
-    
-    # Salva em memória (BytesIO) para download
     output = io.BytesIO()
     doc.save(output)
     output.seek(0)
     return output
+
+# --- Inteligência Artificial (Gemma 3 via Google AI Studio) ---
+
+def extrair_texto_pdf(filepath):
+    """Extrai texto de um arquivo PDF."""
+    try:
+        reader = PdfReader(filepath)
+        text = ""
+        # Lê até 40 páginas
+        for page in reader.pages[:40]:
+            extracted = page.extract_text()
+            if extracted:
+                text += extracted + "\n"
+        return text
+    except Exception as e:
+        return f"Erro ao ler PDF: {str(e)}"
+
+def resumir_com_google(texto, api_key):
+    """Envia o texto para a API do Google usando o modelo Gemma 3."""
+    if not api_key:
+        return "Erro: API Key não configurada. Verifique se o Secrets está ativo."
+    
+    try:
+        # Configura a API
+        genai.configure(api_key=api_key)
+        
+        # Modelo alvo
+        model_name = 'gemma-3-27b-it' 
+        
+        model = genai.GenerativeModel(model_name)
+        
+        prompt = f"""
+        Atue como um Assessor Jurídico Sênior experiente.
+        Analise o texto jurídico abaixo extraído de um arquivo PDF:
+        
+        {texto[:60000]}
+        
+        Produza um resumo estruturado contendo:
+        1. 📄 **Tipo de Peça**: (Ex: Sentença, Petição Inicial, Agravo)
+        2. ⚖️ **Resumo dos Fatos**: Breve narrativa do que aconteceu.
+        3. 🎯 **Dispositivo/Pedidos**: O que foi decidido ou solicitado.
+        4. ⚠️ **Prazos e Riscos**: Destaque datas fatais ou obrigações urgentes.
+        """
+        
+        response = model.generate_content(prompt)
+        return response.text
+
+    except Exception as e:
+        return f"Erro na IA Google: {str(e)}. Verifique sua API Key e permissões."

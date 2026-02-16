@@ -35,7 +35,6 @@ class Cliente(Base):
     observacoes = Column(Text)
     data_cadastro = Column(DateTime, default=datetime.now)
     
-    # Relacionamento
     processos = relationship("Processo", back_populates="cliente", cascade="all, delete-orphan")
 
 class Processo(Base):
@@ -81,11 +80,11 @@ class Financeiro(Base):
     __tablename__ = "financeiro"
     id = Column(Integer, primary_key=True, index=True)
     processo_id = Column(Integer, ForeignKey("processos.id"), nullable=False)
-    descricao = Column(String, nullable=False) # Ex: Honorários Iniciais, Custas
-    tipo = Column(String, nullable=False) # Receita (Honorário) ou Despesa
+    descricao = Column(String, nullable=False)
+    tipo = Column(String, nullable=False) # Honorário ou Despesa
     valor = Column(Float, nullable=False)
     data_vencimento = Column(Date)
-    status = Column(String, default="Pendente") # Pendente, Pago
+    status = Column(String, default="Pendente")
 
     processo = relationship("Processo", back_populates="financeiro")
 

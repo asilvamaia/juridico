@@ -74,7 +74,7 @@ def render_file_preview(filepath, filename):
 
 def show_calculadora_prazos():
     st.header("📆 Calculadora de Prazos Processuais")
-    st.caption("Calcula dias úteis considerando finais de semana e feriados nacionais (Brasil).")
+    st.caption("Calcula dias úteis considerando feriados nacionais (Brasil).")
     
     with st.container(border=True):
         c1, c2 = st.columns(2)
@@ -83,7 +83,6 @@ def show_calculadora_prazos():
         
         if st.button("Calcular Vencimento"):
             resultado = services.calcular_prazo_util(dt_pub, dias)
-            
             st.markdown("---")
             c_res1, c_res2 = st.columns(2)
             c_res1.success(f"📅 Data Fatal: **{resultado.strftime('%d/%m/%Y')}**")
@@ -98,7 +97,6 @@ def show_dashboard(db: Session):
     total_clientes = db.query(Cliente).count()
     total_processos = db.query(Processo).filter(Processo.status == "Em andamento").count()
     
-    # Cálculos Financeiros
     receitas = db.query(func.sum(Financeiro.valor)).filter(Financeiro.tipo == "Honorário", Financeiro.status == "Pago").scalar() or 0
     a_receber = db.query(func.sum(Financeiro.valor)).filter(Financeiro.tipo == "Honorário", Financeiro.status == "Pendente").scalar() or 0
     
@@ -126,26 +124,23 @@ def show_dashboard(db: Session):
 
 def show_clientes(db: Session):
     st.header("📁 Gestão de Clientes")
-    
     tab1, tab2 = st.tabs(["Listar/Buscar/Editar", "Novo Cliente"])
     
-    # --- ABA 1: LISTAR E EDITAR ---
+    # LISTAR E EDITAR
     with tab1:
         search = st.text_input("Buscar por Nome ou CPF/CNPJ", "")
         query = db.query(Cliente)
         if search:
             query = query.filter(or_(Cliente.nome.ilike(f"%{search}%"), Cliente.cpf_cnpj.ilike(f"%{search}%")))
-        
         clientes = query.all()
         
         if clientes:
             for cli in clientes:
                 with st.expander(f"👤 {cli.nome} - {cli.cpf_cnpj}"):
-                    # Toggle para modo de edição
                     edit_mode = st.toggle("✏️ Editar Dados", key=f"toggle_edit_{cli.id}")
                     
                     if not edit_mode:
-                        # Modo de Visualização (Leitura)
+                        # Modo Visualização
                         c1, c2 = st.columns(2)
                         c1.write(f"**Email:** {cli.email}")
                         c1.write(f"**Telefone:** {cli.telefone}")
@@ -153,7 +148,6 @@ def show_clientes(db: Session):
                         st.write(f"**Observações:** {cli.observacoes}")
                         st.caption(f"Cadastrado em: {format_date_br(cli.data_cadastro)}")
                         
-                        # --- Botão Gerador de Procuração ---
                         st.markdown("---")
                         col_doc, col_del = st.columns([0.8, 0.2])
                         
@@ -169,11 +163,10 @@ def show_clientes(db: Session):
                                         key=f"dl_doc_{cli.id}"
                                     )
                                 else:
-                                    st.warning("⚠️ Arquivo 'template_procuracao.docx' não encontrado na pasta 'templates'. Crie um arquivo Word com as tags {{nome_cliente}}, {{cpf_cliente}} para usar esta função.")
-
+                                    st.warning("⚠️ Arquivo 'template_procuracao.docx' não encontrado na pasta 'templates'.")
+                        
                         with col_del:
                             if st.button("🗑️ Excluir", key=f"del_cli_{cli.id}"):
-                                # Re-query para garantir sessão
                                 cli_to_del = db.query(Cliente).get(cli.id)
                                 if cli_to_del:
                                     db.delete(cli_to_del)
@@ -181,7 +174,7 @@ def show_clientes(db: Session):
                                     st.success("Cliente excluído!")
                                     st.rerun()
                     else:
-                        # Modo de Edição (Formulário)
+                        # Modo Edição
                         with st.form(key=f"form_edit_cli_{cli.id}"):
                             ed_nome = st.text_input("Nome", value=cli.nome)
                             ed_cpf = st.text_input("CPF/CNPJ", value=cli.cpf_cnpj)
@@ -191,7 +184,6 @@ def show_clientes(db: Session):
                             ed_obs = st.text_area("Observações", value=cli.observacoes)
                             
                             if st.form_submit_button("💾 Salvar Alterações"):
-                                # CRÍTICO: Re-buscar o objeto na sessão atual antes de salvar
                                 cliente_atual = db.query(Cliente).get(cli.id)
                                 if cliente_atual:
                                     cliente_atual.nome = ed_nome
@@ -209,7 +201,7 @@ def show_clientes(db: Session):
         else:
             st.info("Nenhum cliente encontrado.")
 
-    # --- ABA 2: NOVO CLIENTE ---
+    # NOVO CLIENTE
     with tab2:
         with st.form("form_cliente"):
             nome = st.text_input("Nome Completo")
@@ -220,7 +212,7 @@ def show_clientes(db: Session):
             obs = st.text_area("Observações")
             submit = st.form_submit_button("Cadastrar Cliente")
             
-            if submit and nome and cpf:
+            if submit and nome:
                 novo = Cliente(nome=nome, cpf_cnpj=cpf, telefone=tel, email=email, endereco=end, observacoes=obs)
                 try:
                     db.add(novo)
@@ -242,7 +234,7 @@ def show_processos(db: Session):
 
     cli_dict = {f"{c.nome} ({c.cpf_cnpj})": c.id for c in clientes_list}
 
-    # --- ABA 2: NOVO PROCESSO ---
+    # NOVO PROCESSO
     with tab2:
         with st.form("form_processo"):
             cli_sel = st.selectbox("Selecione o Cliente", list(cli_dict.keys()))
@@ -251,10 +243,7 @@ def show_processos(db: Session):
             tipo = st.selectbox("Tipo de Ação", ["Cível", "Trabalhista", "Criminal", "Família", "Tributário", "Outros"])
             parte = st.text_input("Parte Contrária")
             status = st.selectbox("Status", ["Em andamento", "Suspenso", "Sentenciado", "Arquivado", "Recurso"])
-            
-            # Data formatada BR
             dt_inicio = st.date_input("Data de Início", value=date.today(), format="DD/MM/YYYY")
-            
             obs = st.text_area("Observações")
             estrategia = st.text_area("🧠 Estratégia (Privado)", help="Visível apenas aqui")
             
@@ -276,13 +265,12 @@ def show_processos(db: Session):
                 except Exception as e:
                     st.error(f"Erro: {e}")
 
-    # --- ABA 1: LISTA E EDIÇÃO ---
+    # LISTA DE PROCESSOS
     with tab1:
         procs = db.query(Processo).join(Cliente).all()
         for p in procs:
             with st.expander(f"{p.numero_processo} - {p.cliente.nome} ({p.status})"):
                 
-                # Visualização rápida
                 c1, c2, c3 = st.columns(3)
                 c1.write(f"**Tribunal:** {p.tribunal}")
                 c1.write(f"**Ação:** {p.tipo_acao}")
@@ -292,67 +280,9 @@ def show_processos(db: Session):
                 
                 st.markdown("---")
                 
-                # --- ABAS INTERNAS DO PROCESSO ---
-                t_sub1, t_sub2, t_sub3, t_sub4 = st.tabs(["📂 Arquivos", "📝 Diário", "💰 Financeiro", "⚙️ Editar Processo"])
+                t_sub1, t_sub2, t_sub3, t_sub4 = st.tabs(["📂 Arquivos (IA)", "📝 Diário", "💰 Financeiro", "⚙️ Editar Processo"])
                 
-                # 1. ABA FINANCEIRO
-                with t_sub3:
-                    st.subheader("Controle Financeiro do Processo")
-                    
-                    # Formulário de Adição
-                    with st.form(key=f"fin_form_{p.id}"):
-                        c_f1, c_f2, c_f3 = st.columns(3)
-                        desc_fin = c_f1.text_input("Descrição (Ex: Honorário Inicial)")
-                        valor_fin = c_f2.number_input("Valor (R$)", min_value=0.0, step=100.0)
-                        tipo_fin = c_f3.selectbox("Tipo", ["Honorário", "Despesa/Custa"])
-                        
-                        c_f4, c_f5 = st.columns(2)
-                        dt_venc = c_f4.date_input("Vencimento", value=date.today(), format="DD/MM/YYYY")
-                        status_fin = c_f5.selectbox("Status", ["Pendente", "Pago"])
-                        
-                        if st.form_submit_button("➕ Adicionar Lançamento"):
-                            novo_fin = Financeiro(processo_id=p.id, descricao=desc_fin, valor=valor_fin, tipo=tipo_fin, data_vencimento=dt_venc, status=status_fin)
-                            db.add(novo_fin)
-                            db.commit()
-                            st.rerun()
-                    
-                    # Tabela de Lançamentos
-                    fin_items = db.query(Financeiro).filter(Financeiro.processo_id == p.id).all()
-                    if fin_items:
-                        data_fin = []
-                        total_hon = 0
-                        total_desp = 0
-                        
-                        for f in fin_items:
-                            data_fin.append({
-                                "Vencimento": f.data_vencimento.strftime("%d/%m/%Y"),
-                                "Descrição": f.descricao,
-                                "Tipo": f.tipo,
-                                "Valor": format_moeda(f.valor),
-                                "Status": f.status,
-                                "ID": f.id
-                            })
-                            if f.tipo == "Honorário": total_hon += f.valor
-                            else: total_desp += f.valor
-                        
-                        st.dataframe(pd.DataFrame(data_fin).drop(columns=["ID"]), use_container_width=True)
-                        st.caption(f"Total Honorários: {format_moeda(total_hon)} | Total Despesas: {format_moeda(total_desp)}")
-                        
-                        # Alterar Status Rápido
-                        st.markdown("##### Atualizar Status")
-                        fin_opts = [f"{d['Descrição']} - {d['Valor']}" for d in data_fin]
-                        sel_fin = st.selectbox("Selecione o lançamento", fin_opts, key=f"sel_fin_{p.id}")
-                        if st.button("Alternar Pago/Pendente", key=f"btn_fin_up_{p.id}"):
-                            idx = fin_opts.index(sel_fin)
-                            fin_id = data_fin[idx]['ID']
-                            fin_obj = db.query(Financeiro).get(fin_id)
-                            fin_obj.status = "Pago" if fin_obj.status == "Pendente" else "Pendente"
-                            db.commit()
-                            st.rerun()
-                    else:
-                        st.info("Nenhum lançamento financeiro neste processo.")
-
-                # 2. ABA ARQUIVOS
+                # ABA ARQUIVOS + IA (GEMMA 3)
                 with t_sub1:
                     uploaded = st.file_uploader("Anexar documento", key=f"up_{p.id}", accept_multiple_files=True)
                     if uploaded:
@@ -367,23 +297,37 @@ def show_processos(db: Session):
                     if files:
                         for f in files:
                             with st.container(border=True):
-                                col_icon, col_name, col_act = st.columns([0.05, 0.7, 0.25])
+                                col_icon, col_name, col_act = st.columns([0.05, 0.55, 0.4])
                                 col_icon.text("📄")
                                 col_name.write(f"**{f}**")
                                 
-                                # Botões lado a lado
-                                bt_view, bt_del = col_act.columns(2)
+                                # Botões de Ação
+                                bt_view, bt_ai, bt_del = col_act.columns([0.3, 0.4, 0.3])
                                 
-                                # Botão Visualizar
-                                if bt_view.button("👁️", key=f"view_{p.id}_{f}", help="Visualizar arquivo"):
+                                # Visualizar
+                                if bt_view.button("👁️", key=f"view_{p.id}_{f}"):
                                     st.session_state[f"preview_{p.id}"] = f
                                 
-                                # Botão Excluir
-                                if bt_del.button("❌", key=f"del_{p.id}_{f}", help="Excluir arquivo"):
+                                # IA GEMMA 3 (Via Secrets)
+                                if f.lower().endswith(".pdf"):
+                                    if bt_ai.button("✨ Resumir (Gemma 3)", key=f"ai_{p.id}_{f}"):
+                                        with st.spinner(f"Analisando com Gemma 3 (via Google)..."):
+                                            full_path = services.get_caminho_arquivo(p.cliente.nome, p.cliente.id, p.numero_processo, f)
+                                            texto_pdf = services.extrair_texto_pdf(full_path)
+                                            
+                                            if "Erro" in texto_pdf:
+                                                st.error(texto_pdf)
+                                            else:
+                                                api_key = st.session_state.get("google_key")
+                                                resumo = services.resumir_com_google(texto_pdf, api_key)
+                                                st.session_state[f"resumo_{p.id}_{f}"] = resumo
+                                
+                                # Excluir
+                                if bt_del.button("❌", key=f"del_{p.id}_{f}"):
                                     services.excluir_arquivo(p.cliente.nome, p.cliente.id, p.numero_processo, f)
                                     st.rerun()
 
-                            # Área de Visualização Condicional
+                            # Mostrar Visualização
                             if f"preview_{p.id}" in st.session_state and st.session_state[f"preview_{p.id}"] == f:
                                 st.info(f"Visualizando: {f}")
                                 full_path = services.get_caminho_arquivo(p.cliente.nome, p.cliente.id, p.numero_processo, f)
@@ -391,10 +335,19 @@ def show_processos(db: Session):
                                 if st.button("Fechar Visualização", key=f"close_view_{p.id}"):
                                     del st.session_state[f"preview_{p.id}"]
                                     st.rerun()
+
+                            # Mostrar Resumo IA
+                            if f"resumo_{p.id}_{f}" in st.session_state:
+                                with st.chat_message("assistant"):
+                                    st.markdown(f"### 🤖 Resumo Gemma 3 - {f}")
+                                    st.markdown(st.session_state[f"resumo_{p.id}_{f}"])
+                                    if st.button("Fechar Resumo", key=f"close_ai_{p.id}_{f}"):
+                                        del st.session_state[f"resumo_{p.id}_{f}"]
+                                        st.rerun()
                     else:
                         st.caption("Nenhum arquivo anexado.")
 
-                # 3. ABA DIÁRIO
+                # ABA DIÁRIO
                 with t_sub2:
                     novo_diario = st.text_input("Nova nota", key=f"note_{p.id}")
                     if st.button("Adicionar Nota", key=f"btn_note_{p.id}"):
@@ -407,28 +360,67 @@ def show_processos(db: Session):
                     for n in notas:
                         st.text(f"{n.data_registro.strftime('%d/%m/%Y %H:%M')} - {n.texto}")
 
-                # 4. ABA EDITAR (Modo Robusto)
+                # ABA FINANCEIRO
+                with t_sub3:
+                    st.subheader("Controle Financeiro")
+                    with st.form(key=f"fin_form_{p.id}"):
+                        c_f1, c_f2, c_f3 = st.columns(3)
+                        desc_fin = c_f1.text_input("Descrição")
+                        valor_fin = c_f2.number_input("Valor (R$)", min_value=0.0, step=100.0)
+                        tipo_fin = c_f3.selectbox("Tipo", ["Honorário", "Despesa/Custa"])
+                        c_f4, c_f5 = st.columns(2)
+                        dt_venc = c_f4.date_input("Vencimento", value=date.today(), format="DD/MM/YYYY")
+                        status_fin = c_f5.selectbox("Status", ["Pendente", "Pago"])
+                        
+                        if st.form_submit_button("➕ Adicionar"):
+                            novo_fin = Financeiro(processo_id=p.id, descricao=desc_fin, valor=valor_fin, tipo=tipo_fin, data_vencimento=dt_venc, status=status_fin)
+                            db.add(novo_fin)
+                            db.commit()
+                            st.rerun()
+                    
+                    fin_items = db.query(Financeiro).filter(Financeiro.processo_id == p.id).all()
+                    if fin_items:
+                        data_fin = []
+                        total_hon = 0
+                        total_desp = 0
+                        for f in fin_items:
+                            data_fin.append({"Vencimento": f.data_vencimento.strftime("%d/%m/%Y"), "Descrição": f.descricao, "Tipo": f.tipo, "Valor": format_moeda(f.valor), "Status": f.status, "ID": f.id})
+                            if f.tipo == "Honorário": total_hon += f.valor
+                            else: total_desp += f.valor
+                        
+                        st.dataframe(pd.DataFrame(data_fin).drop(columns=["ID"]), use_container_width=True)
+                        st.caption(f"Total Honorários: {format_moeda(total_hon)} | Total Despesas: {format_moeda(total_desp)}")
+                        
+                        st.markdown("##### Atualizar Status")
+                        fin_opts = [f"{d['Descrição']} - {d['Valor']}" for d in data_fin]
+                        sel_fin = st.selectbox("Selecione o lançamento", fin_opts, key=f"sel_fin_{p.id}")
+                        if st.button("Alternar Pago/Pendente", key=f"btn_fin_up_{p.id}"):
+                            idx = fin_opts.index(sel_fin)
+                            fin_id = data_fin[idx]['ID']
+                            fin_obj = db.query(Financeiro).get(fin_id)
+                            fin_obj.status = "Pago" if fin_obj.status == "Pendente" else "Pendente"
+                            db.commit()
+                            st.rerun()
+                    else:
+                        st.info("Nenhum lançamento.")
+
+                # ABA EDITAR
                 with t_sub4:
                     with st.form(key=f"form_edit_proc_{p.id}"):
                         ed_num = st.text_input("Número", value=p.numero_processo)
                         ed_trib = st.text_input("Tribunal", value=p.tribunal)
-                        
                         lista_tipos = ["Cível", "Trabalhista", "Criminal", "Família", "Tributário", "Outros"]
                         idx_tipo = lista_tipos.index(p.tipo_acao) if p.tipo_acao in lista_tipos else 0
                         ed_tipo = st.selectbox("Tipo", lista_tipos, index=idx_tipo)
-                        
                         ed_parte = st.text_input("Parte Contrária", value=p.parte_contraria)
-                        
                         lista_status = ["Em andamento", "Suspenso", "Sentenciado", "Arquivado", "Recurso"]
                         idx_status = lista_status.index(p.status) if p.status in lista_status else 0
                         ed_status = st.selectbox("Status", lista_status, index=idx_status)
-                        
                         ed_dt = st.date_input("Data Início", value=p.data_inicio, format="DD/MM/YYYY")
                         ed_obs = st.text_area("Observações", value=p.observacoes)
-                        ed_est = st.text_area("Estratégia (Privado)", value=p.estrategia)
+                        ed_est = st.text_area("Estratégia", value=p.estrategia)
                         
-                        if st.form_submit_button("💾 Atualizar Processo"):
-                            # CRÍTICO: Re-buscar objeto
+                        if st.form_submit_button("💾 Atualizar"):
                             proc_atual = db.query(Processo).get(p.id)
                             if proc_atual:
                                 proc_atual.numero_processo = ed_num
@@ -441,10 +433,10 @@ def show_processos(db: Session):
                                 proc_atual.estrategia = ed_est
                                 try:
                                     db.commit()
-                                    st.success("Processo atualizado!")
+                                    st.success("Atualizado!")
                                     st.rerun()
                                 except Exception as e:
-                                    st.error(f"Erro ao atualizar: {e}")
+                                    st.error(f"Erro: {e}")
 
 def show_agenda(db: Session):
     st.header("📅 Agenda Jurídica")
@@ -506,7 +498,6 @@ def show_agenda(db: Session):
             st.write("---")
             st.caption("Ações rápidas:")
             
-            # Opção para alternar status
             evento_opcoes = [f"{d['Data']} - {d['Evento']}" for d in df_data]
             sel_evt = st.selectbox("Selecione um evento para alterar status", evento_opcoes)
             
@@ -514,7 +505,6 @@ def show_agenda(db: Session):
                 idx = evento_opcoes.index(sel_evt)
                 evt_id = df_data[idx]['ID']
                 
-                # Re-query para segurança
                 evt_obj = db.query(Audiencia).get(evt_id)
                 if evt_obj:
                     evt_obj.concluido = 1 if evt_obj.concluido == 0 else 0
@@ -556,6 +546,19 @@ def main():
 
     # Sidebar Navigation
     st.sidebar.title(f"Olá, {st.session_state.username}")
+    
+    # --- INTEGRAÇÃO SECRETS PARA API ---
+    # Busca a chave nos segredos. Se não existir, pede manualmente.
+    if "GOOGLE_API_KEY" in st.secrets:
+        st.session_state["google_key"] = st.secrets["GOOGLE_API_KEY"]
+        # st.sidebar.success("✅ AI Ativada") # Opcional: mostrar confirmação visual
+    else:
+        st.sidebar.markdown("### 🤖 Configuração IA")
+        key = st.sidebar.text_input("API Key (Gemma 3)", type="password", help="Chave do Google AI Studio")
+        if key:
+            st.session_state["google_key"] = key
+    # -----------------------------------
+
     menu = st.sidebar.radio(
         "Menu",
         ["Dashboard", "Clientes", "Processos", "Agenda", "Calculadora Prazos", "Relatórios"],
